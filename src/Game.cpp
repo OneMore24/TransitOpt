@@ -1,11 +1,13 @@
 #include "Game.h"
 #include "Renderer.h"
 #include "GeneticAlgorithm.h"
+#include "Train.h"
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 
 Game::Game() 
-    : m_window(sf::VideoMode(sf::Vector2u(m_config.columns * m_config.cellSize + m_config.menuWidth, m_config.rows * m_config.cellSize)), "TransitOpt - Hito 8"),
+    : m_window(sf::VideoMode(sf::Vector2u(m_config.columns * m_config.cellSize + m_config.menuWidth, m_config.rows * m_config.cellSize)), "TransitOpt - Hito 9"),
       m_mapa(m_config.rows, m_config.columns, m_config.cellSize),
       m_redMetro(10),
       m_nextStationId(1), m_nextPassengerId(1), m_selectedStationId(-1),
@@ -13,15 +15,13 @@ Game::Game()
     
     m_window.setFramerateLimit(60);
 
-    // inicialisamos las 7 lineas con colores distintos
-    // la IA las sobreescribira despues, pero necesitamos colores base
     m_lineas.emplace_back(1, sf::Color::Red);
     m_lineas.emplace_back(2, sf::Color::Blue);
     m_lineas.emplace_back(3, sf::Color::Green);
     m_lineas.emplace_back(4, sf::Color::Yellow);
     m_lineas.emplace_back(5, sf::Color::Magenta);
     m_lineas.emplace_back(6, sf::Color::Cyan);
-    m_lineas.emplace_back(7, sf::Color(255, 165, 0)); // naranja
+    m_lineas.emplace_back(7, sf::Color(255, 165, 0));
 
     m_tipos[0] = StationType::CIRCULO; m_tipos[1] = StationType::CUADRADO;
     m_tipos[2] = StationType::TRIANGULO; m_tipos[3] = StationType::OVALO;
@@ -38,16 +38,19 @@ void Game::Run() {
         
         m_window.clear(sf::Color(240, 240, 240));
         
-        // el orden de dibujo importa
+        // orden de dibujo
         Renderer::DrawMap(m_window, m_mapa, m_config.menuWidth);
         Renderer::DrawLines(m_window, m_lineas, m_redMetro, m_mapa, m_config.menuWidth);
+        
+        // dibujamos los trenes ANTES de las estaciones pa q no las tapen
+        for (auto& tren : m_trenes) {
+            tren.Draw(m_window, m_config.menuWidth);
+        }
+        
         Renderer::DrawStations(m_window, m_redMetro, m_selectedStationId, m_config.menuWidth, m_config.cellSize);
         Renderer::DrawPassengers(m_window, m_pasajeros, m_config.menuWidth);
-        
-        // el menu ahora solo muestra las figuras y el color de la linea activa (si se usa)
         Renderer::DrawMenu(m_window, m_tipos, m_config.menuWidth, m_modoRio, sf::Color::White);
         
-        // dibujamos el fantasma si estamos arrastrando
         if (m_draggingType != -1) {
             sf::Vector2f mousePos = m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window));
             Renderer::DrawStationShape(m_window, static_cast<StationType>(m_draggingType), mousePos, m_config.cellSize / 3.0f, sf::Color(255, 255, 255, 200));
@@ -63,13 +66,11 @@ void Game::ProcessEvents() {
 
         sf::Vector2f mousePos = m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window));
 
-        // teclas
         if (const auto* key = event->getIf<sf::Event::KeyPressed>()) {
             if (key->code == sf::Keyboard::Key::R) m_modoRio = !m_modoRio;
-            if (key->code == sf::Keyboard::Key::G) RunAI(); // lansa la IA
+            if (key->code == sf::Keyboard::Key::G) RunAI();
         }
 
-        // pintar rio arrastrando
         if (event->getIf<sf::Event::MouseMoved>()) {
             if (m_modoRio && sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
                 if (mousePos.x >= m_config.menuWidth) {
@@ -81,18 +82,15 @@ void Game::ProcessEvents() {
 
         if (const auto* mouseButton = event->getIf<sf::Event::MouseButtonPressed>()) {
             if (mouseButton->button == sf::Mouse::Button::Left) {
-                // click en el menu pa arrastrar figura
                 if (mousePos.x > 0 && mousePos.x < m_config.menuWidth) {
                     int index = mousePos.y / (m_window.getSize().y / 10.0f);
                     if (index >= 0 && index < 10) m_draggingType = static_cast<int>(m_tipos[index]);
                 } 
-                // click en el mapa
                 else if (mousePos.x >= m_config.menuWidth) {
                     sf::Vector2u gridCoords = m_mapa.GetGridCoords(mousePos.x - m_config.menuWidth, mousePos.y);
                     if (m_modoRio) {
                         m_mapa.SetCell(gridCoords.x, gridCoords.y, TerrainType::AGUA);
                     } else {
-                        // solo seleccionamos la estasion pa resaltarla, ya no unimos manual
                         auto* clickedStation = m_redMetro.FindStationAt(gridCoords.x, gridCoords.y);
                         if (clickedStation != nullptr) {
                             m_selectedStationId = clickedStation->GetId();
@@ -109,15 +107,12 @@ void Game::ProcessEvents() {
                     StationType targetType;
                     do { targetType = static_cast<StationType>(rand() % 10); } while (targetType == clickedStation->GetType());
 
-                    std::vector<int> path = m_redMetro.FindShortestPathToType(clickedStation->GetId(), targetType);
-                    if (!path.empty()) {
-                        m_pasajeros.emplace_back(m_nextPassengerId++, clickedStation->GetId(), targetType, path, clickedStation->GetPixelPos());
-                    }
+                    // El pasajero ya no se mueve solo, asi q no le pasamos la ruta
+                    m_pasajeros.emplace_back(m_nextPassengerId++, clickedStation->GetId(), targetType, clickedStation->GetPixelPos());
                 }
             }
         }
 
-        // soltamos el mouse pa crear la estasion
         if (const auto* mouseButton = event->getIf<sf::Event::MouseButtonReleased>()) {
             if (mouseButton->button == sf::Mouse::Button::Left && m_draggingType != -1) {
                 if (mousePos.x >= m_config.menuWidth) {
@@ -138,8 +133,46 @@ void Game::ProcessEvents() {
 }
 
 void Game::Update(float deltaTime) {
-    for (auto& p : m_pasajeros) p.Update(deltaTime, &m_redMetro);
-    m_pasajeros.erase(std::remove_if(m_pasajeros.begin(), m_pasajeros.end(), [](const CPassenger& p) { return p.HasArrived(); }), m_pasajeros.end());
+    // 1. actualisamos trenes
+    for (auto& tren : m_trenes) {
+        tren.Update(deltaTime, m_redMetro);
+    }
+
+    // 2. logica de pasajeros (esperar o subirse)
+    for (auto& pasajero : m_pasajeros) {
+        if (!pasajero.IsOnBoard()) {
+            // si esta esperando, buscamos un tren en su estasion
+            for (auto& tren : m_trenes) {
+                if (tren.GetState() == TrainState::WAITING && tren.HasSpace()) {
+                    auto* stPasajero = m_redMetro.GetStationById(pasajero.GetStartId());
+                    if (stPasajero && stPasajero->GetPixelPos() == tren.GetPixelPos()) {
+                        tren.BoardPassenger();
+                        pasajero.SetOnBoard(true);
+                        
+                        // ACTUALISAMOS LA POSISION DEL PASAJERO AL TREN
+                        pasajero.SetPixelPos(tren.GetPixelPos());
+                        break;
+                    }
+                }
+            }
+        } else {
+            // si esta en el tren, su posision es la del tren
+            // buscamos el tren en el q esta (simplificasion: el primero q lo tenga)
+            // En un sistema real, el pasajero guardaria el ID del tren.
+            // Pa esta version, lo hacemos rebotar con el primer tren q este cerca.
+            for (auto& tren : m_trenes) {
+                if (tren.GetState() == TrainState::MOVING) {
+                    // si el tren esta serca del pasajero, lo movemos con el
+                    float dx = pasajero.GetPixelPos().x - tren.GetPixelPos().x;
+                    float dy = pasajero.GetPixelPos().y - tren.GetPixelPos().y;
+                    if (std::sqrt(dx*dx + dy*dy) < 30.0f) {
+                        pasajero.SetPixelPos(tren.GetPixelPos());
+                        break;
+                    }
+                }
+            }
+        }
+    }
 }
 
 void Game::RunAI() {
@@ -151,7 +184,6 @@ void Game::RunAI() {
         return;
     }
 
-    // generamos demandas (simulamos pasajeros q quieren viajar)
     std::vector<std::pair<int, StationType>> demands;
     for (auto* st : stations) {
         for (int k = 0; k < 5; ++k) {
@@ -161,7 +193,6 @@ void Game::RunAI() {
         }
     }
 
-    // Llamamos a la IA con el maximo de lineas y puentes definidos en config
     GeneticAlgorithm ga(stations, m_mapa, m_config.maxBridges, m_config.maxLines, demands, 50, 50);
     std::vector<CLine> bestLines = ga.Optimize();
 
@@ -170,28 +201,20 @@ void Game::RunAI() {
         return;
     }
 
-        // Limpiamos las vias y lineas actuales
     m_redMetro.ClearEdges();
     m_lineas = bestLines;
 
-        // Asignamos colores y reasignamos IDs a las lineas que creo la IA
     sf::Color colores[7] = {sf::Color::Red, sf::Color::Blue, sf::Color::Green, sf::Color::Yellow, sf::Color::Magenta, sf::Color::Cyan, sf::Color(255, 165, 0)};
     for (size_t i = 0; i < m_lineas.size(); ++i) {
-        // 1. creamos la nueva linea con su color
         CLine lineaConColor(i + 1, colores[i % 7]);
-        
-        // 2. le copiamos las estaciones de la linea original
         for (int stId : m_lineas[i].GetStations()) {
             lineaConColor.AddStation(stId);
         }
-        
-        // 3. la reemplasamos
         m_lineas[i] = lineaConColor;
         
         const auto& stIds = m_lineas[i].GetStations();
-        if (stIds.size() < 2) continue; // proteccion por si la IA devolvio una linea vacia
+        if (stIds.size() < 2) continue;
 
-        // 4. reconstruimos el grafo
         for (size_t j = 0; j < stIds.size() - 1; ++j) {
             auto* stA = m_redMetro.GetStationById(stIds[j]);
             auto* stB = m_redMetro.GetStationById(stIds[j+1]);
@@ -202,10 +225,23 @@ void Game::RunAI() {
         }
     }
 
+    // creamos los trenes pa las lineas nuevas
+    CreateTrainsForLines();
+
     std::cout << "====================================\n";
     std::cout << "IA aplicada al mapa!\n";
     std::cout << "Rutas creadas: " << m_lineas.size() << "\n";
     std::cout << "====================================\n";
     
     m_window.setTitle("TransitOpt - IA aplicada | Rutas: " + std::to_string(m_lineas.size()));
+}
+
+void Game::CreateTrainsForLines() {
+    m_trenes.clear();
+    for (auto& line : m_lineas) {
+        if (line.GetStations().size() >= 2) {
+            // creamos un tren con capacidad 10 en la primera estasion de la linea
+            m_trenes.emplace_back(line.GetId(), &line, 0, 10); 
+        }
+    }
 }

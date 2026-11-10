@@ -2,26 +2,28 @@
 #define __PASSENGER_H__
 
 #include <SFML/Graphics.hpp>
-#include <vector>
-#include "Graph.h"
+#include "Station.h"
 
 class CPassenger {
 private:
     int m_id;
     int m_startId;
     StationType m_targetType;
-    std::vector<int> m_path; 
-    size_t m_currentPathIndex; 
     sf::Vector2f m_pixelPos;
-    sf::CircleShape m_shape;
-    float m_speed;
+    bool m_onBoard; // si esta en un tren o esperando en el anden
 
 public:
-    CPassenger(int id, int start, StationType target, std::vector<int> path, sf::Vector2f startPos);
-    void Update(float deltaTime, CGraph<StationTrait<int>>* graph);
-    void Draw(sf::RenderWindow& window);
-    bool HasArrived() const;
-    sf::Vector2f GetPixelPos() const;
+    CPassenger(int id, int start, StationType target, sf::Vector2f startPos);
+    
+    // El pasajero ya no se mueve solo, su posision la dicta el tren
+    void SetPixelPos(sf::Vector2f pos) { m_pixelPos = pos; }
+    sf::Vector2f GetPixelPos() const { return m_pixelPos; }
+    
+    int GetStartId() const { return m_startId; }
+    StationType GetTargetType() const { return m_targetType; }
+    
+    bool IsOnBoard() const { return m_onBoard; }
+    void SetOnBoard(bool val) { m_onBoard = val; }
 };
 
 #endif

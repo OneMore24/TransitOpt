@@ -6,6 +6,7 @@
 #include "Graph.h"
 #include "Passenger.h"
 #include "Line.h"
+#include "Train.h"
 #include "Config.h"
 #include <vector>
 
@@ -18,6 +19,7 @@ private:
     
     std::vector<CPassenger> m_pasajeros;
     std::vector<CLine> m_lineas;
+    std::vector<CTrain> m_trenes;
     
     int m_nextStationId;
     int m_nextPassengerId;
@@ -31,6 +33,7 @@ private:
     void ProcessEvents();
     void Update(float deltaTime);
     void RunAI();
+    void CreateTrainsForLines();
 
 public:
     Game();
