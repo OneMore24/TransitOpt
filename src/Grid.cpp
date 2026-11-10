@@ -4,15 +4,14 @@ template <typename Traits>
 CGrid<Traits>::CGrid(size_t rows, size_t columns, size_t cellSize) 
     : m_rows(rows), m_columns(columns), m_cellSize(cellSize) {
     
-    // Reservamos memoria para el arreglo 1D
+    // reservamos memoria pa la grid
     m_pData = new CellType[m_rows * m_columns];
 
-    // Inicializamos todo como Tierra
     for (size_t i = 0; i < m_rows * m_columns; ++i) {
-        m_pData[i] = CellType::TIERRA;
+        m_pData[i] = CellType::TIERRA; // todo empiesa como tierra
     }
 
-    // Creamos un río de prueba en la fila 7 (índice 7)
+    // creamos un rio de prueba en la fila 7
     for (size_t x = 0; x < m_columns; ++x) {
         SetCell(x, 7, CellType::AGUA);
     }
@@ -38,33 +37,38 @@ typename CGrid<Traits>::CellType CGrid<Traits>::GetCell(size_t x, size_t y) cons
     if (x < m_columns && y < m_rows) {
         return m_pData[GetIndex(x, y)];
     }
-    return CellType::TIERRA; // Retorno por defecto si se sale de los límites
+    return CellType::TIERRA; // retorno por defecto
+}
+
+template <typename Traits>
+sf::Vector2u CGrid<Traits>::GetGridCoords(float pixelX, float pixelY) const {
+    // dividimos el pixel entre el tamaño de la celda
+    size_t gridX = static_cast<size_t>(pixelX / m_cellSize);
+    size_t gridY = static_cast<size_t>(pixelY / m_cellSize);
+    return sf::Vector2u(gridX, gridY);
 }
 
 template <typename Traits>
 void CGrid<Traits>::Draw(sf::RenderWindow& window) const {
     sf::RectangleShape rect(sf::Vector2f(static_cast<float>(m_cellSize), static_cast<float>(m_cellSize)));
 
-    // Dibujamos el fondo
     for (size_t y = 0; y < m_rows; ++y) {
         for (size_t x = 0; x < m_columns; ++x) {
-            // Corrección 1: Usar sf::Vector2f para setPosition
             rect.setPosition(sf::Vector2f(static_cast<float>(x * m_cellSize), static_cast<float>(y * m_cellSize)));
             
             if (m_pData[GetIndex(x, y)] == CellType::AGUA) {
-                rect.setFillColor(sf::Color(147, 197, 253)); // Azul claro
+                rect.setFillColor(sf::Color(147, 197, 253)); // azul
             } else {
-                rect.setFillColor(sf::Color(248, 250, 252)); // Blanco roto
+                rect.setFillColor(sf::Color(248, 250, 252)); // blanco
             }
             window.draw(rect);
         }
     }
 
-    // Corrección 2: Usar sf::PrimitiveType::Lines
+    // dibujamos las lineas de la grid
     sf::VertexArray lineas(sf::PrimitiveType::Lines);
     
     for (size_t i = 0; i <= m_rows; ++i) {
-        // Corrección 3: Usar llaves {} en lugar de paréntesis () para sf::Vertex
         lineas.append(sf::Vertex{sf::Vector2f(0, static_cast<float>(i * m_cellSize)), sf::Color(203, 213, 225)});
         lineas.append(sf::Vertex{sf::Vector2f(static_cast<float>(m_columns * m_cellSize), static_cast<float>(i * m_cellSize)), sf::Color(203, 213, 225)});
     }
@@ -75,5 +79,4 @@ void CGrid<Traits>::Draw(sf::RenderWindow& window) const {
     window.draw(lineas);
 }
 
-// Como usamos Templates, debemos instanciar la clase explícitamente al final
 template class CGrid<GridTrait<TerrainType>>;
