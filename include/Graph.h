@@ -8,12 +8,12 @@
 #include <limits>
 #include <algorithm>
 #include <map>
+#include <cmath>
 
-// estructura pa las vias
 struct CEdge {
     int m_idStationA;
     int m_idStationB;
-    bool m_isBridge; // true si uso un puente
+    bool m_isBridge;
 };
 
 template <typename Traits>
@@ -26,28 +26,26 @@ private:
     size_t m_numStations;
     StationType** m_pStations; 
 
-    // arreglo de vias
     size_t m_edgeCapacity;
     size_t m_numEdges;
-    CEdge* m_pEdges; // arreglo 1d de vias
+    CEdge* m_pEdges; 
 
 public:
     CGraph(size_t initialCapacity = 10);
     ~CGraph();
 
-    // algoritmo de dijkstra pa buscar la ruta mas corta
-    std::vector<int> FindShortestPath(int startId, int endId) const;
-
-    void AddStation(IdType id, size_t x, size_t y, sf::Vector2f pixelPos);
+    void AddStation(IdType id, size_t x, size_t y, sf::Vector2f pixelPos, ::StationType type);
     StationType* GetStation(size_t index) const;
     StationType* FindStationAt(size_t gridX, size_t gridY) const;
-    StationType* GetStationById(IdType id) const; // añadido pa buscar x id
+    StationType* GetStationById(IdType id) const; 
     size_t GetNumStations() const { return m_numStations; }
 
-    // metodos pa las vias
     void AddEdge(int idA, int idB, bool isBridge);
     size_t GetNumEdges() const { return m_numEdges; }
     CEdge GetEdge(size_t index) const { return m_pEdges[index]; }
+
+    // dijkstra pero busca el tipo mas sercano, no un id
+    std::vector<int> FindShortestPathToType(int startId, ::StationType targetType) const;
 };
 
 // --- IMPLEMENTACION ---
@@ -58,7 +56,6 @@ CGraph<Traits>::CGraph(size_t initialCapacity)
       m_edgeCapacity(10), m_numEdges(0) {
     m_pStations = new StationType*[m_capacity];
     for (size_t i = 0; i < m_capacity; ++i) m_pStations[i] = nullptr;
-    
     m_pEdges = new CEdge[m_edgeCapacity];
 }
 
@@ -66,13 +63,12 @@ template <typename Traits>
 CGraph<Traits>::~CGraph() {
     for (size_t i = 0; i < m_numStations; ++i) delete m_pStations[i];
     delete[] m_pStations; 
-    delete[] m_pEdges; // liberamos las vias
+    delete[] m_pEdges; 
 }
 
 template <typename Traits>
-void CGraph<Traits>::AddStation(IdType id, size_t x, size_t y, sf::Vector2f pixelPos) {
+void CGraph<Traits>::AddStation(IdType id, size_t x, size_t y, sf::Vector2f pixelPos, ::StationType type) {
     if (m_numStations >= m_capacity) {
-        // redimencionamos manual xq es mas rapido q vectores
         size_t newCapacity = m_capacity * 2;
         StationType** newData = new StationType*[newCapacity];
         for (size_t i = 0; i < m_numStations; ++i) newData[i] = m_pStations[i];
@@ -80,7 +76,7 @@ void CGraph<Traits>::AddStation(IdType id, size_t x, size_t y, sf::Vector2f pixe
         m_pStations = newData;
         m_capacity = newCapacity;
     }
-    m_pStations[m_numStations++] = new StationType(id, x, y, pixelPos);
+    m_pStations[m_numStations++] = new StationType(id, x, y, pixelPos, type);
 }
 
 template <typename Traits>
@@ -92,7 +88,6 @@ typename CGraph<Traits>::StationType* CGraph<Traits>::GetStation(size_t index) c
 template <typename Traits>
 typename CGraph<Traits>::StationType* CGraph<Traits>::FindStationAt(size_t gridX, size_t gridY) const {
     for (size_t i = 0; i < m_numStations; ++i) {
-        // comparamos las cordenadas pa ver si ya existe
         if (m_pStations[i]->GetGridX() == gridX && m_pStations[i]->GetGridY() == gridY) {
             return m_pStations[i];
         }
@@ -103,9 +98,7 @@ typename CGraph<Traits>::StationType* CGraph<Traits>::FindStationAt(size_t gridX
 template <typename Traits>
 typename CGraph<Traits>::StationType* CGraph<Traits>::GetStationById(IdType id) const {
     for (size_t i = 0; i < m_numStations; ++i) {
-        if (m_pStations[i]->GetId() == id) {
-            return m_pStations[i];
-        }
+        if (m_pStations[i]->GetId() == id) return m_pStations[i];
     }
     return nullptr;
 }
@@ -113,7 +106,6 @@ typename CGraph<Traits>::StationType* CGraph<Traits>::GetStationById(IdType id) 
 template <typename Traits>
 void CGraph<Traits>::AddEdge(int idA, int idB, bool isBridge) {
     if (m_numEdges >= m_edgeCapacity) {
-        // redimencionamos las vias
         size_t newCapacity = m_edgeCapacity * 2;
         CEdge* newData = new CEdge[newCapacity];
         for (size_t i = 0; i < m_numEdges; ++i) newData[i] = m_pEdges[i];
@@ -125,20 +117,19 @@ void CGraph<Traits>::AddEdge(int idA, int idB, bool isBridge) {
 }
 
 template <typename Traits>
-std::vector<int> CGraph<Traits>::FindShortestPath(int startId, int endId) const {
+std::vector<int> CGraph<Traits>::FindShortestPathToType(int startId, ::StationType targetType) const {
     std::map<int, float> dist;
     std::map<int, int> parent;
     
-    // inicializamos las distancias al infinito
     for (size_t i = 0; i < m_numStations; ++i) {
         dist[m_pStations[i]->GetId()] = std::numeric_limits<float>::max();
     }
     dist[startId] = 0.0f;
 
-    // cola de prioridad: guarda pares (distancia, id)
-    // greater hace q sea un min-heap, sacando primero el mas sercano
     std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>, std::greater<std::pair<float, int>>> pq;
     pq.push({0.0f, startId});
+
+    int targetStationId = -1;
 
     while (!pq.empty()) {
         float d = pq.top().first;
@@ -146,9 +137,14 @@ std::vector<int> CGraph<Traits>::FindShortestPath(int startId, int endId) const 
         pq.pop();
 
         if (d > dist[u]) continue;
-        if (u == endId) break; // ya llegamos
 
-        // revisamos las vias conectadas a u
+        // si la estasion actual es del tipo q buscamos (y no es la de origen), llegamos
+        auto* stU = GetStationById(u);
+        if (stU->GetType() == targetType && u != startId) {
+            targetStationId = u;
+            break; // salimos xq ya encontramos la mas sercana
+        }
+
         for (size_t i = 0; i < m_numEdges; ++i) {
             CEdge edge = m_pEdges[i];
             int v = -1;
@@ -156,10 +152,11 @@ std::vector<int> CGraph<Traits>::FindShortestPath(int startId, int endId) const 
             else if (edge.m_idStationB == u) v = edge.m_idStationA;
 
             if (v != -1) {
-                // el peso es la distancia en la grid (asumimos 1 x celda pa simplificar)
-                // o podriamos usar la distancia euclidiana
-                float weight = 1.0f; // peso base
-                if (edge.m_isBridge) weight += 2.0f; // usar puente cuesta mas? (opcional)
+                auto* stV = GetStationById(v);
+                // calculamos la distancia real en pixeles
+                float dx = stU->GetPixelPos().x - stV->GetPixelPos().x;
+                float dy = stU->GetPixelPos().y - stV->GetPixelPos().y;
+                float weight = std::sqrt(dx*dx + dy*dy) / 30.0f; // normalisado a celdas
 
                 if (dist[u] + weight < dist[v]) {
                     dist[v] = dist[u] + weight;
@@ -170,16 +167,14 @@ std::vector<int> CGraph<Traits>::FindShortestPath(int startId, int endId) const 
         }
     }
 
-    // reconstruimos el camino
     std::vector<int> path;
-    if (dist[endId] == std::numeric_limits<float>::max()) return path; // no hay camino
+    if (targetStationId == -1) return path; 
     
-    for (int at = endId; at != startId; at = parent[at]) {
+    for (int at = targetStationId; at != startId; at = parent[at]) {
         path.push_back(at);
     }
     path.push_back(startId);
     std::reverse(path.begin(), path.end());
-    
     return path;
 }
 
