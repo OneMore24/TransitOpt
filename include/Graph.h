@@ -41,6 +41,7 @@ public:
     size_t GetNumStations() const { return m_numStations; }
 
     void AddEdge(int idA, int idB, bool isBridge);
+    void ClearEdges() { m_numEdges = 0; }
     size_t GetNumEdges() const { return m_numEdges; }
     CEdge GetEdge(size_t index) const { return m_pEdges[index]; }
 

@@ -6,8 +6,12 @@ int CLine::GetId() const { return m_id; }
 sf::Color CLine::GetColor() const { return m_color; }
 const std::vector<int>& CLine::GetStations() const { return m_stationIds; }
 
-void CLine::AddStation(int stationId) {
-    m_stationIds.push_back(stationId);
+void CLine::AddStation(int stationId) { 
+    m_stationIds.push_back(stationId); 
+}
+
+void CLine::ClearStations() { 
+    m_stationIds.clear(); 
 }
 
 bool CLine::HasStation(int stationId) const {

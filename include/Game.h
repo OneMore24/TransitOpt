@@ -22,9 +22,7 @@ private:
     int m_nextStationId;
     int m_nextPassengerId;
     int m_selectedStationId;
-    int m_bridgesLeft;
     int m_draggingType;
-    int m_lineaActualIndex;
     bool m_modoRio;
     
     sf::Clock m_clock;
@@ -32,6 +30,7 @@ private:
 
     void ProcessEvents();
     void Update(float deltaTime);
+    void RunAI();
 
 public:
     Game();
