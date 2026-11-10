@@ -4,6 +4,7 @@
 #include "Passenger.h"
 #include <optional>
 #include <iostream>
+#include <algorithm>
 #include <cmath>
 
 int main() {
@@ -92,9 +93,15 @@ int main() {
 
         // actualizamos a los pasajeros
         for (auto& p : pasajeros) {
-            // la logica de movimiento (simplificada para esta version)
-            // en el siguiente hito la haremos mas robusta
+            p.Update(deltaTime, &redMetro);
         }
+
+        // borramos a los q ya llegaron a su destino pa no llenar la ram
+        pasajeros.erase(
+            std::remove_if(pasajeros.begin(), pasajeros.end(),
+                [](const CPassenger& p) { return p.HasArrived(); }),
+            pasajeros.end()
+        );
 
         window.clear();
         mapa.Draw(window);
