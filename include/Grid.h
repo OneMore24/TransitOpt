@@ -34,6 +34,9 @@ public:
     CGrid(size_t rows, size_t columns, size_t cellSize);
     virtual ~CGrid();
 
+    // revisa si la via cruza el rio
+    bool IsRiverCrossing(float x1, float y1, float x2, float y2) const;
+
     void SetCell(size_t x, size_t y, CellType type);
     CellType GetCell(size_t x, size_t y) const;
     

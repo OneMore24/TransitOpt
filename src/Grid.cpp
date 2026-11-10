@@ -79,4 +79,23 @@ void CGrid<Traits>::Draw(sf::RenderWindow& window) const {
     window.draw(lineas);
 }
 
+template <typename Traits>
+bool CGrid<Traits>::IsRiverCrossing(float x1, float y1, float x2, float y2) const {
+    (void)x1; // evitamos warning de parametro sin usar
+    (void)x2; 
+
+    // convertimos los pixeles a cordenadas de la grid
+    size_t gridY1 = static_cast<size_t>(y1 / m_cellSize);
+    size_t gridY2 = static_cast<size_t>(y2 / m_cellSize);
+    
+    // el rio esta en la fila 7 (por ahora)
+    size_t riverY = 7;
+    
+    // si una esta arriba y la otra abajo, lo cruza
+    if ((gridY1 < riverY && gridY2 > riverY) || (gridY1 > riverY && gridY2 < riverY)) {
+        return true;
+    }
+    return false;
+}
+
 template class CGrid<GridTrait<TerrainType>>;
