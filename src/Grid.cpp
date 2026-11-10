@@ -75,27 +75,36 @@ void CGrid<Traits>::Draw(sf::RenderWindow& window, float offsetX) const {
 
 template <typename Traits>
 bool CGrid<Traits>::IsRiverCrossing(float x1, float y1, float x2, float y2) const {
-    // pasamos de pixeles a cordenadas de la grid
-    size_t gx1 = static_cast<size_t>(x1 / m_cellSize);
-    size_t gy1 = static_cast<size_t>(y1 / m_cellSize);
-    size_t gx2 = static_cast<size_t>(x2 / m_cellSize);
-    size_t gy2 = static_cast<size_t>(y2 / m_cellSize);
+    // pasamos de pixeles a cordenadas de la grid (usamos int, no size_t, pa evitar el underflow)
+    int gx1 = static_cast<int>(x1 / m_cellSize);
+    int gy1 = static_cast<int>(y1 / m_cellSize);
+    int gx2 = static_cast<int>(x2 / m_cellSize);
+    int gy2 = static_cast<int>(y2 / m_cellSize);
 
-    // cuantos pasos damos pa dibujar la linea
-    int dx = abs(static_cast<int>(gx2) - static_cast<int>(gx1));
-    int dy = abs(static_cast<int>(gy2) - static_cast<int>(gy1));
-    int steps = std::max(dx, dy);
+    // Algoritmo de Bresenham: es la forma mas rapida de trazar una linea en una cuadricula
+    int dx = std::abs(gx2 - gx1);
+    int sx = (gx1 < gx2) ? 1 : -1;
+    int dy = -std::abs(gy2 - gy1);
+    int sy = (gy1 < gy2) ? 1 : -1;
+    int err = dx + dy; 
 
-    if (steps == 0) return false;
-
-    // revisamos paso a paso si toca agua
-    for (int i = 0; i <= steps; ++i) {
-        float t = static_cast<float>(i) / steps;
-        size_t cx = static_cast<size_t>(gx1 + t * (gx2 - gx1));
-        size_t cy = static_cast<size_t>(gy1 + t * (gy2 - gy1));
-        
-        if (GetCell(cx, cy) == TerrainType::AGUA) {
+    while (true) {
+        // si la celda actual es agua, ya cruzamos el rio
+        if (GetCell(gx1, gy1) == TerrainType::AGUA) {
             return true;
+        }
+        
+        // si llegamos al destino, terminamos
+        if (gx1 == gx2 && gy1 == gy2) break;
+
+        int e2 = 2 * err;
+        if (e2 >= dy) { 
+            err += dy; 
+            gx1 += sx; 
+        }
+        if (e2 <= dx) { 
+            err += dx; 
+            gy1 += sy; 
         }
     }
     return false;
