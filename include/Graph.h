@@ -3,6 +3,11 @@
 
 #include "Station.h"
 #include <iostream>
+#include <queue>
+#include <vector>
+#include <limits>
+#include <algorithm>
+#include <map>
 
 // estructura pa las vias
 struct CEdge {
@@ -29,6 +34,9 @@ private:
 public:
     CGraph(size_t initialCapacity = 10);
     ~CGraph();
+
+    // algoritmo de dijkstra pa buscar la ruta mas corta
+    std::vector<int> FindShortestPath(int startId, int endId) const;
 
     void AddStation(IdType id, size_t x, size_t y, sf::Vector2f pixelPos);
     StationType* GetStation(size_t index) const;
@@ -114,6 +122,65 @@ void CGraph<Traits>::AddEdge(int idA, int idB, bool isBridge) {
         m_edgeCapacity = newCapacity;
     }
     m_pEdges[m_numEdges++] = {idA, idB, isBridge};
+}
+
+template <typename Traits>
+std::vector<int> CGraph<Traits>::FindShortestPath(int startId, int endId) const {
+    std::map<int, float> dist;
+    std::map<int, int> parent;
+    
+    // inicializamos las distancias al infinito
+    for (size_t i = 0; i < m_numStations; ++i) {
+        dist[m_pStations[i]->GetId()] = std::numeric_limits<float>::max();
+    }
+    dist[startId] = 0.0f;
+
+    // cola de prioridad: guarda pares (distancia, id)
+    // greater hace q sea un min-heap, sacando primero el mas sercano
+    std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>, std::greater<std::pair<float, int>>> pq;
+    pq.push({0.0f, startId});
+
+    while (!pq.empty()) {
+        float d = pq.top().first;
+        int u = pq.top().second;
+        pq.pop();
+
+        if (d > dist[u]) continue;
+        if (u == endId) break; // ya llegamos
+
+        // revisamos las vias conectadas a u
+        for (size_t i = 0; i < m_numEdges; ++i) {
+            CEdge edge = m_pEdges[i];
+            int v = -1;
+            if (edge.m_idStationA == u) v = edge.m_idStationB;
+            else if (edge.m_idStationB == u) v = edge.m_idStationA;
+
+            if (v != -1) {
+                // el peso es la distancia en la grid (asumimos 1 x celda pa simplificar)
+                // o podriamos usar la distancia euclidiana
+                float weight = 1.0f; // peso base
+                if (edge.m_isBridge) weight += 2.0f; // usar puente cuesta mas? (opcional)
+
+                if (dist[u] + weight < dist[v]) {
+                    dist[v] = dist[u] + weight;
+                    parent[v] = u;
+                    pq.push({dist[v], v});
+                }
+            }
+        }
+    }
+
+    // reconstruimos el camino
+    std::vector<int> path;
+    if (dist[endId] == std::numeric_limits<float>::max()) return path; // no hay camino
+    
+    for (int at = endId; at != startId; at = parent[at]) {
+        path.push_back(at);
+    }
+    path.push_back(startId);
+    std::reverse(path.begin(), path.end());
+    
+    return path;
 }
 
 #endif // __GRAPH_H__
