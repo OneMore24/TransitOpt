@@ -62,11 +62,11 @@ void Game::SetupConfig() {
 
     std::string input;
 
-    std::cout << "cuantas rutas maximas quieres crear? [" << m_config.maxLines << "]: ";
+    std::cout << "cuantas rutas EXACTAS quieres que use? [" << m_config.maxLines << "]: ";
     std::getline(std::cin, input);
     if (!input.empty()) { try { m_config.maxLines = std::stoi(input); } catch (...) {} }
 
-    std::cout << "cuantos puentes maximos tienes? [" << m_config.maxBridges << "]: ";
+    std::cout << "cuantos puentes EXACTOS quieres que use? [" << m_config.maxBridges << "]: ";
     std::getline(std::cin, input);
     if (!input.empty()) { try { m_config.maxBridges = std::stoi(input); } catch (...) {} }
 
