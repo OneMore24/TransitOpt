@@ -13,7 +13,11 @@ struct GameConfig {
     float trainSpeed = 100.0f;
     
     bool autoSpawn = false; 
-    float spawnInterval = 2.0f; // cada cuantos segundos aparece un pasajero por estacion
+    float spawnInterval = 2.0f;
+
+    // parametros pa la IA (pa q tarde lo q sea nesesario)
+    int gaPopulation = 1000;  
+    int gaGenerations = 500;  
 };
 
 #endif

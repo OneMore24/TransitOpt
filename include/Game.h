@@ -2,6 +2,7 @@
 #define __GAME_H__
 
 #include <SFML/Graphics.hpp>
+#include <future>
 #include "Grid.h"
 #include "Graph.h"
 #include "Passenger.h"
@@ -37,14 +38,18 @@ private:
     StationType m_tipos[10];
     sf::Font m_font; 
 
+    // variables pa la concurrencia de la IA
+    bool m_isOptimizing;
+    std::future<std::vector<CLine>> m_optimizeFuture;
+
     void ProcessEvents();
     void Update(float deltaTime);
     void RunAI();
+    void FinishAIOptimization();
     void CreateTrainsForLines();
     void LoadConfig();
     void SetupConfig();
     void ClearMap();
-    void AutoSpawnPassenger();
     void SaveMap();
     void LoadMap();
 

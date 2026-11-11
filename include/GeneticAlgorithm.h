@@ -4,13 +4,14 @@
 #include <vector>
 #include <random>
 #include <future>
+#include <mutex>
 #include <iostream>
+#include <thread> // pa saber los nucleos
 #include "Graph.h"
 #include "Grid.h"
 #include "Station.h"
 #include "Line.h"
 
-// el cromosoma ahora es un conjunto de lineas de metro
 struct Chromosome {
     std::vector<CLine> lines;
     float fitness;

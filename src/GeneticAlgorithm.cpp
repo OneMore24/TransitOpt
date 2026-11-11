@@ -1,6 +1,8 @@
 #include "GeneticAlgorithm.h"
 #include <algorithm>
 #include <cmath>
+#include <set> 
+#include <thread>
 
 GeneticAlgorithm::GeneticAlgorithm(const std::vector<CStation<StationTrait<int>>*>& stations, 
                                    const CGrid<GridTrait<TerrainType>>& grid, 
@@ -14,22 +16,52 @@ Chromosome GeneticAlgorithm::CreateRandomChromosome() {
     Chromosome c;
     if (m_stations.empty()) return c;
 
-    // creamos rutas aleatorias (entre 1 y maxLines)
     int numLines = 1 + rand() % m_maxLines;
     
+    std::vector<int> unvisitedStations;
+    for (auto* st : m_stations) unvisitedStations.push_back(st->GetId());
+
     for (int i = 0; i < numLines; ++i) {
-        CLine line(i + 1, sf::Color::Red); // el color se puede asignar despues
-        int numStations = 2 + rand() % (m_stations.size() - 1); // minimo 2 estaciones
+        CLine line(i + 1, sf::Color::Red);
         
-        // armamos la ruta con estaciones al azar (simulando un camino)
-        int currentId = m_stations[rand() % m_stations.size()]->GetId();
+        int currentId = -1;
+        if (!unvisitedStations.empty()) {
+            int idx = rand() % unvisitedStations.size();
+            currentId = unvisitedStations[idx];
+            unvisitedStations.erase(unvisitedStations.begin() + idx);
+        } else {
+            currentId = m_stations[rand() % m_stations.size()]->GetId();
+        }
+
         line.AddStation(currentId);
-        
+        int numStations = 3 + rand() % 5; 
+
         for (int j = 0; j < numStations; ++j) {
-            int nextId = m_stations[rand() % m_stations.size()]->GetId();
-            if (!line.HasStation(nextId)) {
-                line.AddStation(nextId);
+            CStation<StationTrait<int>>* stActual = nullptr;
+            for (auto* s : m_stations) if (s->GetId() == currentId) stActual = s;
+            if (!stActual) break;
+
+            std::vector<std::pair<float, int>> nearby;
+            for (auto* st : m_stations) {
+                if (!line.HasStation(st->GetId())) {
+                    float dx = stActual->GetPixelPos().x - st->GetPixelPos().x;
+                    float dy = stActual->GetPixelPos().y - st->GetPixelPos().y;
+                    float dist = std::sqrt(dx*dx + dy*dy);
+                    nearby.push_back({dist, st->GetId()});
+                }
             }
+
+            if (nearby.empty()) break;
+            std::sort(nearby.begin(), nearby.end());
+
+            int pickIdx = rand() % std::min(static_cast<int>(nearby.size()), 3);
+            int nextId = nearby[pickIdx].second;
+            
+            line.AddStation(nextId);
+            currentId = nextId;
+            
+            auto it = std::find(unvisitedStations.begin(), unvisitedStations.end(), nextId);
+            if (it != unvisitedStations.end()) unvisitedStations.erase(it);
         }
         c.lines.push_back(line);
     }
@@ -37,22 +69,18 @@ Chromosome GeneticAlgorithm::CreateRandomChromosome() {
 }
 
 float GeneticAlgorithm::EvaluateChromosome(Chromosome& c) {
-    // 1. Castigo por usar muchas rutas (q use las menos posibles)
-    float penaltyLines = c.lines.size() * 500.0f; // si crea muchas lineas, el fitness sube (es peor)
-
-    // 2. Revisamos cuantos puentes usa creando un grafo temporal
     CGraph<StationTrait<int>> graph(m_stations.size() + 1);
     for (auto* st : m_stations) {
         graph.AddStation(st->GetId(), st->GetGridX(), st->GetGridY(), st->GetPixelPos(), st->GetType());
     }
 
     int bridgesUsed = 0;
+    std::set<int> uniqueConnectedStations; 
+
     for (auto& line : c.lines) {
         auto& stationsInLine = line.GetStations();
+        for (int stId : stationsInLine) uniqueConnectedStations.insert(stId);
         
-        // Evitamos el error si la linea esta vacia o solo tiene 1 estasion
-        if (stationsInLine.size() < 2) continue; 
-
         for (size_t i = 0; i < stationsInLine.size() - 1; ++i) {
             auto* stA = graph.GetStationById(stationsInLine[i]);
             auto* stB = graph.GetStationById(stationsInLine[i+1]);
@@ -61,59 +89,89 @@ float GeneticAlgorithm::EvaluateChromosome(Chromosome& c) {
             bool cruzaRio = m_grid->IsRiverCrossing(stA->GetPixelPos().x, stA->GetPixelPos().y, stB->GetPixelPos().x, stB->GetPixelPos().y);
             if (cruzaRio) {
                 bridgesUsed++;
-                if (bridgesUsed > m_maxBridges) return 9999999.0f; // castigo brutal
+                if (bridgesUsed > m_maxBridges) return 99999999.0f; 
             }
             graph.AddEdge(stA->GetId(), stB->GetId(), cruzaRio);
         }
     }
 
-    // 3. Evaluamos el tiempo de viaje real (distancia + 1 seg de espera por estacion)
-    float totalTime = 0.0f;
-    float speed = 150.0f; // velocidad constante en pixeles/seg
+    int totalStations = m_stations.size();
+    int disconnected = totalStations - uniqueConnectedStations.size();
+    float penaltyDisconnected = disconnected * 50000.0f; 
 
+    float totalTime = 0.0f;
+    float speed = 150.0f;
     for (auto& demand : m_demands) {
         std::vector<int> path = graph.FindShortestPathToType(demand.first, demand.second);
         if (path.empty()) {
-            totalTime += 5000.0f; // castigo si no se puede llegar
+            totalTime += 10000.0f;
         } else {
-            // calculamos la distancia real recorrida
             for (size_t i = 0; i < path.size() - 1; ++i) {
                 auto* stA = graph.GetStationById(path[i]);
                 auto* stB = graph.GetStationById(path[i+1]);
                 float dx = stA->GetPixelPos().x - stB->GetPixelPos().x;
                 float dy = stA->GetPixelPos().y - stB->GetPixelPos().y;
-                float dist = std::sqrt(dx*dx + dy*dy);
-                totalTime += dist / speed; // tiempo de viaje
-                totalTime += 1.0f; // 1 segundo de espera en la estacion
+                totalTime += (std::sqrt(dx*dx + dy*dy) / speed) + 1.0f;
             }
         }
     }
 
-    return totalTime + penaltyLines;
+    float penaltyLines = c.lines.size() * 1000.0f;
+    return totalTime + penaltyDisconnected + penaltyLines;
 }
 
 void GeneticAlgorithm::Mutate(Chromosome& c) {
     if (c.lines.empty()) return;
-    // mutacion: cambiar una estacion de una linea al azar
     int lineIdx = rand() % c.lines.size();
     auto& stations = const_cast<std::vector<int>&>(c.lines[lineIdx].GetStations());
     
-    if (!stations.empty() && rand() % 2 == 0) {
-        stations[rand() % stations.size()] = m_stations[rand() % m_stations.size()]->GetId();
+    if (stations.size() > 2 && rand() % 100 < 30) {
+        int idxToChange = rand() % stations.size();
+        int neighborId = (idxToChange > 0) ? stations[idxToChange - 1] : stations[1];
+        
+        CStation<StationTrait<int>>* stNeighbor = nullptr;
+        for (auto* s : m_stations) if (s->GetId() == neighborId) stNeighbor = s;
+        
+        if (stNeighbor) {
+            std::vector<std::pair<float, int>> nearby;
+            for (auto* st : m_stations) {
+                if (!c.lines[lineIdx].HasStation(st->GetId())) {
+                    float dx = stNeighbor->GetPixelPos().x - st->GetPixelPos().x;
+                    float dy = stNeighbor->GetPixelPos().y - st->GetPixelPos().y;
+                    nearby.push_back({std::sqrt(dx*dx + dy*dy), st->GetId()});
+                }
+            }
+            std::sort(nearby.begin(), nearby.end());
+            if (!nearby.empty()) {
+                int pickIdx = rand() % std::min(static_cast<int>(nearby.size()), 3);
+                stations[idxToChange] = nearby[pickIdx].second;
+            }
+        }
     }
 }
 
 std::vector<CLine> GeneticAlgorithm::Optimize() {
-    std::cout << "iniciando IA con " << m_populationSize << " redes...\n";
+    std::cout << "iniciando IA con " << m_populationSize << " redes y " << m_generations << " generaciones...\n";
     std::vector<Chromosome> population(m_populationSize);
     for (int i = 0; i < m_populationSize; ++i) population[i] = CreateRandomChromosome();
 
+    // detectamos cuantos nucleos tiene el procesador pa no saturarlo y q no crashee
+    unsigned int numCores = std::thread::hardware_concurrency();
+    if (numCores == 0) numCores = 4;
+
     for (int gen = 0; gen < m_generations; ++gen) {
-        std::vector<std::future<float>> futures;
-        for (int i = 0; i < m_populationSize; ++i) {
-            futures.push_back(std::async(std::launch::async, &GeneticAlgorithm::EvaluateChromosome, this, std::ref(population[i])));
+        // evaluamos en lotes usando el numero de nucleos
+        for (int i = 0; i < m_populationSize; i += numCores) {
+            std::vector<std::future<float>> futures;
+            int batchEnd = std::min(i + static_cast<int>(numCores), m_populationSize);
+            
+            for (int j = i; j < batchEnd; ++j) {
+                futures.push_back(std::async(std::launch::async, &GeneticAlgorithm::EvaluateChromosome, this, std::ref(population[j])));
+            }
+            for (size_t j = 0; j < futures.size(); ++j) {
+                population[i + j].fitness = futures[j].get();
+            }
         }
-        for (int i = 0; i < m_populationSize; ++i) population[i].fitness = futures[i].get();
 
         std::sort(population.begin(), population.end(), [](const Chromosome& a, const Chromosome& b) { return a.fitness < b.fitness; });
 
@@ -123,18 +181,17 @@ std::vector<CLine> GeneticAlgorithm::Optimize() {
         while (static_cast<int>(newPop.size()) < m_populationSize) {
             int p1 = rand() % 10;
             int p2 = rand() % 10;
-            Chromosome child = population[p1];
             
-            // cruce basico: mezclar estaciones de las lineas del padre 2
-            for (auto& line : population[p2].lines) {
-                if (rand() % 2 == 0) child.lines.push_back(line);
+            Chromosome child;
+            if (!population[p1].lines.empty()) child.lines.push_back(population[p1].lines[0]);
+            if (!population[p2].lines.empty()) child.lines.push_back(population[p2].lines[0]);
+            
+            for (auto& line : population[p1].lines) {
+                if (rand() % 2 == 0 && static_cast<int>(child.lines.size()) < m_maxLines) {
+                    child.lines.push_back(line);
+                }
             }
             
-            // si el hijo tiene mas lineas de las permitidas, quitamos las sobrantes
-            while (static_cast<int>(child.lines.size()) > m_maxLines) {
-                child.lines.pop_back();
-            }
-
             if (rand() % 100 < 20) Mutate(child);
             newPop.push_back(child);
         }

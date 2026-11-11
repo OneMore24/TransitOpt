@@ -16,7 +16,8 @@ Game::Game()
       m_redMetro(10),
       m_nextStationId(1), m_nextPassengerId(1), m_selectedStationId(-1),
       m_draggingType(-1), m_modoRio(false), m_pausado(false),
-      m_totalPassengers(0), m_arrivedPassengers(0), m_trainCapacity(10) {
+      m_totalPassengers(0), m_arrivedPassengers(0), m_trainCapacity(10),
+      m_isOptimizing(false) {
     
     m_window.setFramerateLimit(60);
 
@@ -52,6 +53,8 @@ void Game::LoadConfig() {
             m_config.maxLines = j["simulacion"].value("max_lineas", 7);
             m_config.autoSpawn = j["simulacion"].value("autopiloto", false);
             m_config.spawnInterval = j["simulacion"].value("intervalo_spawn", 2.0f);
+            m_config.gaPopulation = j["simulacion"].value("ia_redes", 1000);
+            m_config.gaGenerations = j["simulacion"].value("ia_generaciones", 500);
         }
         if (j.contains("flota")) {
             m_trainCapacity = j["flota"].value("capacidad_vagon", 10);
@@ -86,10 +89,16 @@ void Game::SetupConfig() {
         try { m_trainCapacity = std::stoi(input); } catch (...) {}
     }
 
-    std::cout << "cada cuantos segundos aparece un pasajero por estacion? [" << m_config.spawnInterval << "]: ";
+    std::cout << "cuantas redes iniciales pa la IA? [" << m_config.gaPopulation << "]: ";
     std::getline(std::cin, input);
     if (!input.empty()) {
-        try { m_config.spawnInterval = std::stof(input); } catch (...) {}
+        try { m_config.gaPopulation = std::stoi(input); } catch (...) {}
+    }
+
+    std::cout << "cuantas generaciones pa la IA? [" << m_config.gaGenerations << "]: ";
+    std::getline(std::cin, input);
+    if (!input.empty()) {
+        try { m_config.gaGenerations = std::stoi(input); } catch (...) {}
     }
 
     std::cout << "activar autopiloto de pasajeros? (s/n) [";
@@ -99,11 +108,15 @@ void Game::SetupConfig() {
         m_config.autoSpawn = (input == "s" || input == "S");
     }
 
-    std::cout << "\nConfiguracion lista! Abriendo el simulador...\n";
-    std::cout << "Rutas maximas: " << m_config.maxLines 
-              << " | Puentes maximos: " << m_config.maxBridges 
-              << " | Capacidad tren: " << m_trainCapacity
-              << " | Spawn: " << m_config.spawnInterval << "s\n\n";
+    if (m_config.autoSpawn) {
+        std::cout << "cada cuantos segundos aparece un pasajero por estacion? [" << m_config.spawnInterval << "]: ";
+        std::getline(std::cin, input);
+        if (!input.empty()) {
+            try { m_config.spawnInterval = std::stof(input); } catch (...) {}
+        }
+    }
+
+    std::cout << "\nConfiguracion lista! Abriendo el simulador...\n\n";
 }
 
 void Game::ClearMap() {
@@ -160,6 +173,20 @@ void Game::Run() {
         }
 
         Renderer::DrawHUD(m_window, m_font, m_lineas.size(), m_totalPassengers, m_arrivedPassengers, m_trainCapacity, m_pausado);
+        
+        // mostramos pantalla de carga si la IA esta trabajando
+        if (m_isOptimizing) {
+            sf::RectangleShape overlay(sf::Vector2f(m_window.getSize().x, m_window.getSize().y));
+            overlay.setFillColor(sf::Color(0, 0, 0, 180));
+            m_window.draw(overlay);
+            
+            sf::Text txt(m_font);
+            txt.setString("LA IA ESTA CALCULANDO LA RED OPTIMA...\nPOR FAVOR ESPERA (esto puede tardar varios minutos)");
+            txt.setCharacterSize(24);
+            txt.setFillColor(sf::Color::White);
+            txt.setPosition(sf::Vector2f(200, m_window.getSize().y / 2.0f - 50));
+            m_window.draw(txt);
+        }
         
         m_window.display();
     }
@@ -251,7 +278,14 @@ void Game::ProcessEvents() {
 void Game::Update(float deltaTime) {
     if (m_pausado) return;
 
-    // AUTOPILOTO: genera un pasajero en CADA estacion cada spawnInterval segundos
+    // revisamos si la IA termino en segundo plano
+    if (m_isOptimizing && m_optimizeFuture.valid()) {
+        if (m_optimizeFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            FinishAIOptimization();
+        }
+    }
+
+    // autopiloto
     if (m_config.autoSpawn && m_spawnClock.getElapsedTime().asSeconds() > m_config.spawnInterval) {
         for (size_t i = 0; i < m_redMetro.GetNumStations(); ++i) {
             auto* st = m_redMetro.GetStation(i);
@@ -331,10 +365,6 @@ void Game::Update(float deltaTime) {
     }
 }
 
-void Game::AutoSpawnPassenger() {
-    // esta funcion ya no se usa, el autopiloto esta en Update()
-}
-
 void Game::SaveMap() {
     json j;
     j["stations"] = json::array();
@@ -402,22 +432,37 @@ void Game::LoadMap() {
 }
 
 void Game::RunAI() {
-    std::vector<CStation<StationTrait<int>>*> stations;
-    for (size_t i = 0; i < m_redMetro.GetNumStations(); ++i) stations.push_back(m_redMetro.GetStation(i));
-    
-    if (stations.size() < 2) { std::cout << "pone mas estaciones!\n"; return; }
-
-    std::vector<std::pair<int, StationType>> demands;
-    for (auto* st : stations) {
-        for (int k = 0; k < 5; ++k) {
-            StationType t;
-            do { t = static_cast<StationType>(rand() % 10); } while (t == st->GetType());
-            demands.push_back({st->GetId(), t});
-        }
+    if (m_isOptimizing) return; // ya esta trabajando
+    if (m_redMetro.GetNumStations() < 2) {
+        std::cout << "pone mas estaciones!\n";
+        return;
     }
 
-    GeneticAlgorithm ga(stations, m_mapa, m_config.maxBridges, m_config.maxLines, demands, 50, 50);
-    std::vector<CLine> bestLines = ga.Optimize();
+    m_isOptimizing = true;
+    std::cout << "lanzando IA en segundo plano...\n";
+
+    // lansamos la IA en un hilo separado pa q no se congele la ventana
+    m_optimizeFuture = std::async(std::launch::async, [this]() {
+        std::vector<CStation<StationTrait<int>>*> stations;
+        for (size_t i = 0; i < m_redMetro.GetNumStations(); ++i) stations.push_back(m_redMetro.GetStation(i));
+        
+        std::vector<std::pair<int, StationType>> demands;
+        for (auto* st : stations) {
+            for (int k = 0; k < 5; ++k) {
+                StationType t;
+                do { t = static_cast<StationType>(rand() % 10); } while (t == st->GetType());
+                demands.push_back({st->GetId(), t});
+            }
+        }
+
+        GeneticAlgorithm ga(stations, m_mapa, m_config.maxBridges, m_config.maxLines, demands, m_config.gaPopulation, m_config.gaGenerations);
+        return ga.Optimize();
+    });
+}
+
+void Game::FinishAIOptimization() {
+    std::vector<CLine> bestLines = m_optimizeFuture.get();
+    m_isOptimizing = false;
 
     if (bestLines.empty()) { std::cout << "la IA no encontro solucion\n"; return; }
 
@@ -445,6 +490,7 @@ void Game::RunAI() {
 
     CreateTrainsForLines();
     m_window.setTitle("TransitOpt - IA aplicada | Rutas: " + std::to_string(m_lineas.size()));
+    std::cout << "IA aplicada al mapa!\n";
 }
 
 void Game::CreateTrainsForLines() {
