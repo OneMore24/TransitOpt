@@ -26,14 +26,23 @@ private:
     int m_selectedStationId;
     int m_draggingType;
     bool m_modoRio;
+    bool m_pausado; 
+    
+    // contadores pal HUD
+    int m_totalPassengers;
+    int m_arrivedPassengers;
+    int m_trainCapacity;
     
     sf::Clock m_clock;
     StationType m_tipos[10];
+    sf::Font m_font; // fuente pal HUD
 
     void ProcessEvents();
     void Update(float deltaTime);
     void RunAI();
     void CreateTrainsForLines();
+    void LoadConfig();
+    void ClearMap();
 
 public:
     Game();

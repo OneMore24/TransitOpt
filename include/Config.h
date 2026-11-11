@@ -8,7 +8,9 @@ struct GameConfig {
     int menuWidth = 120;
     int maxBridges = 3;
     int maxLines = 7;
+    int passengerCapacity = 10;
     float passengerSpeed = 150.0f;
+    float trainSpeed = 100.0f; 
 };
 
 #endif

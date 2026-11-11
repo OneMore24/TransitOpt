@@ -17,6 +17,9 @@ public:
     static void DrawStations(sf::RenderWindow& window, const CGraph<StationTrait<int>>& redMetro, int selectedId, float offsetX, int cellSize);
     static void DrawPassengers(sf::RenderWindow& window, const std::vector<CPassenger>& pasajeros, float offsetX);
     static void DrawMenu(sf::RenderWindow& window, const StationType tipos[10], int menuWidth, bool modoRio, sf::Color lineaActualColor);
+    
+    //dibuja las estadisticas en pantalla
+    static void DrawHUD(sf::RenderWindow& window, const sf::Font& font, int rutas, int totalPax, int arrivedPax, int capacidad, bool pausado);
 };
 
 #endif

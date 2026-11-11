@@ -141,3 +141,39 @@ void Renderer::DrawMenu(sf::RenderWindow& window, const StationType tipos[10], i
     lineIndicator.setOutlineColor(sf::Color::White);
     window.draw(lineIndicator);
 }
+
+void Renderer::DrawHUD(sf::RenderWindow& window, const sf::Font& font, int rutas, int totalPax, int arrivedPax, int capacidad, bool pausado) {
+    // panel semitransparente arriba a la derecha
+    sf::RectangleShape panel(sf::Vector2f(250, 120));
+    panel.setPosition(sf::Vector2f(window.getSize().x - 260, 10));
+    panel.setFillColor(sf::Color(0, 0, 0, 150));
+    window.draw(panel);
+
+    // textos
+    sf::Text text(font);
+    text.setCharacterSize(16);
+    text.setFillColor(sf::Color::White);
+    text.setPosition(sf::Vector2f(window.getSize().x - 250, 15));
+    text.setString("Rutas activas: " + std::to_string(rutas));
+    window.draw(text);
+
+    text.setPosition(sf::Vector2f(window.getSize().x - 250, 35));
+    text.setString("Pasajeros totales: " + std::to_string(totalPax));
+    window.draw(text);
+
+    text.setPosition(sf::Vector2f(window.getSize().x - 250, 55));
+    text.setString("Pasajeros llegados: " + std::to_string(arrivedPax));
+    window.draw(text);
+
+    text.setPosition(sf::Vector2f(window.getSize().x - 250, 75));
+    text.setString("Capacidad tren: " + std::to_string(capacidad) + " (+/-)");
+    window.draw(text);
+
+    // aviso de pausa
+    if (pausado) {
+        text.setPosition(sf::Vector2f(window.getSize().x - 250, 95));
+        text.setString("PAUSADO (tecla P)");
+        text.setFillColor(sf::Color::Yellow);
+        window.draw(text);
+    }
+}
