@@ -163,6 +163,7 @@ void Game::ProcessEvents() {
                     }
                 }
 
+                // click derecho = pasajero
                 if (mouseButton->button == sf::Mouse::Button::Right && mousePos.x >= m_config.menuWidth && !m_modoRio) {
                     sf::Vector2u gridCoords = m_mapa.GetGridCoords(mousePos.x - m_config.menuWidth, mousePos.y);
                     auto* clickedStation = m_redMetro.FindStationAt(gridCoords.x, gridCoords.y);
@@ -170,6 +171,7 @@ void Game::ProcessEvents() {
                         StationType targetType;
                         do { targetType = static_cast<StationType>(rand() % 10); } while (targetType == clickedStation->GetType());
 
+                        // creamos el pasajero sin ruta, el solo la calculara
                         m_pasajeros.emplace_back(m_nextPassengerId++, clickedStation->GetId(), targetType, clickedStation->GetPixelPos());
                         m_totalPassengers++;
                     }
@@ -199,39 +201,66 @@ void Game::ProcessEvents() {
 void Game::Update(float deltaTime) {
     if (m_pausado) return;
 
+    // 1. actualisamos los trenes
     for (auto& tren : m_trenes) tren.Update(deltaTime, m_redMetro);
 
-        for (auto it = m_pasajeros.begin(); it != m_pasajeros.end(); ) {
+    // 2. logica de pasajeros
+    for (auto it = m_pasajeros.begin(); it != m_pasajeros.end(); ) {
         bool deletePassenger = false;
 
         if (!it->IsOnBoard()) {
-            for (auto& tren : m_trenes) {
-                if (tren.GetState() == TrainState::WAITING && tren.HasSpace()) {
-                    auto* stPasajero = m_redMetro.GetStationById(it->GetStartId());
-                    if (stPasajero && stPasajero->GetPixelPos() == tren.GetPixelPos()) {
-                        tren.BoardPassenger();
-                        it->SetOnBoard(true);
-                        it->SetPixelPos(tren.GetPixelPos());
-                        break;
+            // --- PASAJERO ESPERANDO EN EL ANDEN ---
+            if (!it->HasPath() || it->HasArrived()) {
+                std::vector<int> path = m_redMetro.FindShortestPathToType(it->GetCurrentStationId(), it->GetTargetType());
+                if (!path.empty()) it->SetPath(path);
+            }
+
+            int nextStationId = it->GetNextStationId();
+            if (nextStationId != -1) {
+                for (auto& tren : m_trenes) {
+                    if (tren.GetState() == TrainState::WAITING && tren.HasSpace()) {
+                        int trainStationId = tren.GetCurrentStationId(m_redMetro);
+                        if (trainStationId == it->GetCurrentStationId()) {
+                            const auto& stIds = m_lineas[tren.GetLineId()-1].GetStations();
+                            bool trainGoesToNext = false;
+                            for (int stId : stIds) {
+                                if (stId == nextStationId) { trainGoesToNext = true; break; }
+                            }
+
+                            if (trainGoesToNext) {
+                                tren.BoardPassenger();
+                                it->SetOnBoard(true);
+                                it->SetPixelPos(tren.GetPixelPos());
+                                break; 
+                            }
+                        }
                     }
                 }
             }
         } else {
+            // --- PASAJERO DENTRO DEL TREN ---
             for (auto& tren : m_trenes) {
                 if (tren.GetState() == TrainState::WAITING) {
-                    const auto& lineStations = m_lineas[tren.GetLineId()-1].GetStations();
+                    int trainStationId = tren.GetCurrentStationId(m_redMetro);
+                    auto* currentSt = m_redMetro.GetStationById(trainStationId);
                     
-                    // comparamos con static_cast pa q no de warning
-                    if (static_cast<int>(tren.GetCurrentStationIndex()) < static_cast<int>(lineStations.size())) {
-                        auto* stActual = m_redMetro.GetStationById(lineStations[tren.GetCurrentStationIndex()]);
-                        if (stActual && stActual->GetType() == it->GetTargetType()) {
+                    if (currentSt) {
+                        if (currentSt->GetType() == it->GetTargetType()) {
                             tren.UnboardPassenger();
                             deletePassenger = true;
                             m_arrivedPassengers++;
                             break;
                         }
+                        
+                        if (trainStationId == it->GetNextStationId()) {
+                            tren.UnboardPassenger();
+                            it->SetOnBoard(false);
+                            it->SetCurrentStationId(trainStationId);
+                            it->AdvancePath();
+                            it->SetPixelPos(currentSt->GetPixelPos());
+                            break;
+                        }
                     }
-                    // el pasajero se mueve con el tren
                     it->SetPixelPos(tren.GetPixelPos());
                 }
             }

@@ -4,7 +4,7 @@
 #include <SFML/Graphics.hpp>
 #include <vector>
 #include "Line.h"
-#include "Graph.h" // <--- ESTE ERA EL QUE FALTABA
+#include "Graph.h" 
 
 enum class TrainState {
     MOVING,
@@ -16,7 +16,7 @@ private:
     int m_lineId;
     CLine* m_line;
     int m_currentStationIndex;
-    int m_direction; // 1 = ida, -1 = vuelta
+    int m_direction; 
     int m_capacity;
     int m_passengersOnBoard;
     
@@ -42,7 +42,8 @@ public:
     int GetCurrentStationIndex() const { return m_currentStationIndex; }
     TrainState GetState() const { return m_state; }
     
-    bool IsGoingTo(int targetStationIndex) const;
+    // el metodo nuevo pa saber en q estasion esta el tren
+    int GetCurrentStationId(const CGraph<StationTrait<int>>& graph) const;
 };
 
 #endif

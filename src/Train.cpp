@@ -58,7 +58,10 @@ void CTrain::Draw(sf::RenderWindow& window, float offsetX) {
     window.draw(rect);
 }
 
-bool CTrain::IsGoingTo(int targetStationIndex) const {
-    (void)targetStationIndex; // evitamos el warning de parametro sin usar
-    return true; 
+int CTrain::GetCurrentStationId(const CGraph<StationTrait<int>>& graph) const {
+    (void)graph; // quitamos warning
+    const auto& stIds = m_line->GetStations();
+    // cambiamos el < a static_cast pa quitar el warning de signos
+    if (stIds.empty() || static_cast<size_t>(m_currentStationIndex) >= stIds.size()) return -1;
+    return stIds[m_currentStationIndex];
 }
