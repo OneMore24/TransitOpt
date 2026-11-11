@@ -1,6 +1,9 @@
 #ifndef __CONFIG_H__
 #define __CONFIG_H__
 
+#include <string>
+#include <vector>
+
 struct GameConfig {
     int rows = 30;
     int columns = 40;
@@ -15,9 +18,10 @@ struct GameConfig {
     bool autoSpawn = false; 
     float spawnInterval = 2.0f;
 
-    // parametros pa la IA (pa q tarde lo q sea nesesario)
     int gaPopulation = 1000;  
     int gaGenerations = 500;  
+
+    std::vector<std::string> playlist;
 };
 
 #endif

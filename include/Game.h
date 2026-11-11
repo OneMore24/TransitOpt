@@ -2,6 +2,7 @@
 #define __GAME_H__
 
 #include <SFML/Graphics.hpp>
+#include <SFML/Audio.hpp>
 #include <future>
 #include "Grid.h"
 #include "Graph.h"
@@ -38,9 +39,12 @@ private:
     StationType m_tipos[10];
     sf::Font m_font; 
 
-    // variables pa la concurrencia de la IA
     bool m_isOptimizing;
     std::future<std::vector<CLine>> m_optimizeFuture;
+
+    sf::Music m_music;
+    int m_currentTrackIndex;
+    bool m_musicPlaying;
 
     void ProcessEvents();
     void Update(float deltaTime);
@@ -52,6 +56,7 @@ private:
     void ClearMap();
     void SaveMap();
     void LoadMap();
+    void PlayNextTrack();
 
 public:
     Game();

@@ -1,16 +1,26 @@
 {
     "mapa": {
-        "max_puentes": 3,
-        "ancho_rio": 100.0
-    },
-    "flota": {
-        "max_vagones": 5,
-        "capacidad_vagon": 10,
-        "velocidad_base": 150.0
+        "max_puentes": 3
     },
     "simulacion": {
         "max_lineas": 7,
         "autopiloto": false,
-        "intervalo_spawn": 2.0
+        "intervalo_spawn": 2.0,
+        "ia_redes": 1000,
+        "ia_generaciones": 500,
+        "playlist": [
+            "musica/cancion1.ogg",
+            "musica/cancion2.ogg",
+            "musica/cancion3.ogg",
+            "musica/cancion4.ogg",
+            "musica/cancion5.ogg",
+            "musica/cancion6.ogg",
+            "musica/cancion7.ogg",
+            "musica/cancion8.ogg"
+        ]
+    },
+    "flota": {
+        "capacidad_vagon": 10,
+        "velocidad_base": 100.0
     }
 }

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <random> // <--- Añadido pa el shuffle
 #include "json.hpp"
 
 using json = nlohmann::json;
@@ -17,7 +18,7 @@ Game::Game()
       m_nextStationId(1), m_nextPassengerId(1), m_selectedStationId(-1),
       m_draggingType(-1), m_modoRio(false), m_pausado(false),
       m_totalPassengers(0), m_arrivedPassengers(0), m_trainCapacity(10),
-      m_isOptimizing(false) {
+      m_isOptimizing(false), m_currentTrackIndex(0), m_musicPlaying(false) {
     
     m_window.setFramerateLimit(60);
 
@@ -55,6 +56,12 @@ void Game::LoadConfig() {
             m_config.spawnInterval = j["simulacion"].value("intervalo_spawn", 2.0f);
             m_config.gaPopulation = j["simulacion"].value("ia_redes", 1000);
             m_config.gaGenerations = j["simulacion"].value("ia_generaciones", 500);
+            
+            if (j["simulacion"].contains("playlist")) {
+                for (auto& track : j["simulacion"]["playlist"]) {
+                    m_config.playlist.push_back(track.get<std::string>());
+                }
+            }
         }
         if (j.contains("flota")) {
             m_trainCapacity = j["flota"].value("capacidad_vagon", 10);
@@ -73,47 +80,33 @@ void Game::SetupConfig() {
 
     std::cout << "cuantas rutas maximas quieres crear? [" << m_config.maxLines << "]: ";
     std::getline(std::cin, input);
-    if (!input.empty()) {
-        try { m_config.maxLines = std::stoi(input); } catch (...) {}
-    }
+    if (!input.empty()) { try { m_config.maxLines = std::stoi(input); } catch (...) {} }
 
     std::cout << "cuantos puentes maximos tienes? [" << m_config.maxBridges << "]: ";
     std::getline(std::cin, input);
-    if (!input.empty()) {
-        try { m_config.maxBridges = std::stoi(input); } catch (...) {}
-    }
+    if (!input.empty()) { try { m_config.maxBridges = std::stoi(input); } catch (...) {} }
 
     std::cout << "cuantos pasajeros caben en un tren? [" << m_trainCapacity << "]: ";
     std::getline(std::cin, input);
-    if (!input.empty()) {
-        try { m_trainCapacity = std::stoi(input); } catch (...) {}
-    }
+    if (!input.empty()) { try { m_trainCapacity = std::stoi(input); } catch (...) {} }
 
     std::cout << "cuantas redes iniciales pa la IA? [" << m_config.gaPopulation << "]: ";
     std::getline(std::cin, input);
-    if (!input.empty()) {
-        try { m_config.gaPopulation = std::stoi(input); } catch (...) {}
-    }
+    if (!input.empty()) { try { m_config.gaPopulation = std::stoi(input); } catch (...) {} }
 
     std::cout << "cuantas generaciones pa la IA? [" << m_config.gaGenerations << "]: ";
     std::getline(std::cin, input);
-    if (!input.empty()) {
-        try { m_config.gaGenerations = std::stoi(input); } catch (...) {}
-    }
+    if (!input.empty()) { try { m_config.gaGenerations = std::stoi(input); } catch (...) {} }
 
     std::cout << "activar autopiloto de pasajeros? (s/n) [";
     std::cout << (m_config.autoSpawn ? "s" : "n") << "]: ";
     std::getline(std::cin, input);
-    if (!input.empty()) {
-        m_config.autoSpawn = (input == "s" || input == "S");
-    }
+    if (!input.empty()) { m_config.autoSpawn = (input == "s" || input == "S"); }
 
     if (m_config.autoSpawn) {
         std::cout << "cada cuantos segundos aparece un pasajero por estacion? [" << m_config.spawnInterval << "]: ";
         std::getline(std::cin, input);
-        if (!input.empty()) {
-            try { m_config.spawnInterval = std::stof(input); } catch (...) {}
-        }
+        if (!input.empty()) { try { m_config.spawnInterval = std::stof(input); } catch (...) {} }
     }
 
     std::cout << "\nConfiguracion lista! Abriendo el simulador...\n\n";
@@ -154,7 +147,6 @@ void Game::Run() {
         
         for (auto& tren : m_trenes) {
             tren.Draw(m_window, m_config.menuWidth);
-            
             sf::Text capText(m_font);
             capText.setCharacterSize(10);
             capText.setFillColor(sf::Color::White);
@@ -174,7 +166,6 @@ void Game::Run() {
 
         Renderer::DrawHUD(m_window, m_font, m_lineas.size(), m_totalPassengers, m_arrivedPassengers, m_trainCapacity, m_pausado);
         
-        // mostramos pantalla de carga si la IA esta trabajando
         if (m_isOptimizing) {
             sf::RectangleShape overlay(sf::Vector2f(m_window.getSize().x, m_window.getSize().y));
             overlay.setFillColor(sf::Color(0, 0, 0, 180));
@@ -278,14 +269,16 @@ void Game::ProcessEvents() {
 void Game::Update(float deltaTime) {
     if (m_pausado) return;
 
-    // revisamos si la IA termino en segundo plano
+    if (m_musicPlaying && m_music.getStatus() == sf::Music::Status::Stopped) {
+        PlayNextTrack();
+    }
+
     if (m_isOptimizing && m_optimizeFuture.valid()) {
         if (m_optimizeFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
             FinishAIOptimization();
         }
     }
 
-    // autopiloto
     if (m_config.autoSpawn && m_spawnClock.getElapsedTime().asSeconds() > m_config.spawnInterval) {
         for (size_t i = 0; i < m_redMetro.GetNumStations(); ++i) {
             auto* st = m_redMetro.GetStation(i);
@@ -432,7 +425,7 @@ void Game::LoadMap() {
 }
 
 void Game::RunAI() {
-    if (m_isOptimizing) return; // ya esta trabajando
+    if (m_isOptimizing) return;
     if (m_redMetro.GetNumStations() < 2) {
         std::cout << "pone mas estaciones!\n";
         return;
@@ -441,7 +434,22 @@ void Game::RunAI() {
     m_isOptimizing = true;
     std::cout << "lanzando IA en segundo plano...\n";
 
-    // lansamos la IA en un hilo separado pa q no se congele la ventana
+    // MUSICA: mezclamos la lista pa q sea aleatoria
+    if (!m_config.playlist.empty()) {
+        std::random_device rd;
+        std::mt19937 g(rd());
+        std::shuffle(m_config.playlist.begin(), m_config.playlist.end(), g);
+
+        m_currentTrackIndex = 0;
+        if (m_music.openFromFile(m_config.playlist[0])) {
+            m_music.play();
+            m_musicPlaying = true;
+            std::cout << "reproduciendo: " << m_config.playlist[0] << "\n";
+        } else {
+            std::cout << "no se pudo cargar la musica: " << m_config.playlist[0] << "\n";
+        }
+    }
+
     m_optimizeFuture = std::async(std::launch::async, [this]() {
         std::vector<CStation<StationTrait<int>>*> stations;
         for (size_t i = 0; i < m_redMetro.GetNumStations(); ++i) stations.push_back(m_redMetro.GetStation(i));
@@ -463,6 +471,12 @@ void Game::RunAI() {
 void Game::FinishAIOptimization() {
     std::vector<CLine> bestLines = m_optimizeFuture.get();
     m_isOptimizing = false;
+
+    if (m_musicPlaying) {
+        m_music.stop();
+        m_musicPlaying = false;
+        std::cout << "musica detenida\n";
+    }
 
     if (bestLines.empty()) { std::cout << "la IA no encontro solucion\n"; return; }
 
@@ -499,5 +513,26 @@ void Game::CreateTrainsForLines() {
         if (line.GetStations().size() >= 2) {
             m_trenes.emplace_back(line.GetId(), &line, 0, m_trainCapacity); 
         }
+    }
+}
+
+void Game::PlayNextTrack() {
+    if (m_config.playlist.empty()) return;
+    
+    m_currentTrackIndex++;
+    if (static_cast<size_t>(m_currentTrackIndex) >= m_config.playlist.size()) {
+        m_currentTrackIndex = 0;
+        
+        std::random_device rd;
+        std::mt19937 g(rd());
+        std::shuffle(m_config.playlist.begin(), m_config.playlist.end(), g);
+    }
+
+    std::string track = m_config.playlist[m_currentTrackIndex];
+    if (m_music.openFromFile(track)) {
+        m_music.play();
+        std::cout << "reproduciendo: " << track << "\n";
+    } else {
+        std::cout << "no se pudo cargar la cancion: " << track << "\n";
     }
 }
