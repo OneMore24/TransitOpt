@@ -24,8 +24,8 @@ Game::Game()
         std::cout << "no se pudo cargar la fuente, el HUD no se vera\n";
     }
 
-    LoadConfig();
-    SetupConfig();  
+    LoadConfig();      
+    SetupConfig();     
 
     m_lineas.emplace_back(1, sf::Color::Red);
     m_lineas.emplace_back(2, sf::Color::Blue);
@@ -58,6 +58,52 @@ void Game::LoadConfig() {
             m_config.trainSpeed = j["flota"].value("velocidad_base", 100.0f);
         }
     }
+}
+
+void Game::SetupConfig() {
+    std::cout << "\n=========================================\n";
+    std::cout << "   CONFIGURACION DE TRANSIT-OPT\n";
+    std::cout << "=========================================\n";
+    std::cout << "presiona enter pa usar el valor por defecto\n\n";
+
+    std::string input;
+
+    std::cout << "cuantas rutas maximas quieres crear? [" << m_config.maxLines << "]: ";
+    std::getline(std::cin, input);
+    if (!input.empty()) {
+        try { m_config.maxLines = std::stoi(input); } catch (...) {}
+    }
+
+    std::cout << "cuantos puentes maximos tienes? [" << m_config.maxBridges << "]: ";
+    std::getline(std::cin, input);
+    if (!input.empty()) {
+        try { m_config.maxBridges = std::stoi(input); } catch (...) {}
+    }
+
+    std::cout << "cuantos pasajeros caben en un tren? [" << m_trainCapacity << "]: ";
+    std::getline(std::cin, input);
+    if (!input.empty()) {
+        try { m_trainCapacity = std::stoi(input); } catch (...) {}
+    }
+
+    std::cout << "cada cuantos segundos aparece un pasajero por estacion? [" << m_config.spawnInterval << "]: ";
+    std::getline(std::cin, input);
+    if (!input.empty()) {
+        try { m_config.spawnInterval = std::stof(input); } catch (...) {}
+    }
+
+    std::cout << "activar autopiloto de pasajeros? (s/n) [";
+    std::cout << (m_config.autoSpawn ? "s" : "n") << "]: ";
+    std::getline(std::cin, input);
+    if (!input.empty()) {
+        m_config.autoSpawn = (input == "s" || input == "S");
+    }
+
+    std::cout << "\nConfiguracion lista! Abriendo el simulador...\n";
+    std::cout << "Rutas maximas: " << m_config.maxLines 
+              << " | Puentes maximos: " << m_config.maxBridges 
+              << " | Capacidad tren: " << m_trainCapacity
+              << " | Spawn: " << m_config.spawnInterval << "s\n\n";
 }
 
 void Game::ClearMap() {
@@ -93,11 +139,9 @@ void Game::Run() {
         Renderer::DrawMap(m_window, m_mapa, m_config.menuWidth);
         Renderer::DrawLines(m_window, m_lineas, m_redMetro, m_mapa, m_config.menuWidth);
         
-        // dibujamos trenes y su capacidad
         for (auto& tren : m_trenes) {
             tren.Draw(m_window, m_config.menuWidth);
             
-            // texto con la capacidad del tren
             sf::Text capText(m_font);
             capText.setCharacterSize(10);
             capText.setFillColor(sf::Color::White);
@@ -207,9 +251,17 @@ void Game::ProcessEvents() {
 void Game::Update(float deltaTime) {
     if (m_pausado) return;
 
-    // autopiloto de pasajeros
+    // AUTOPILOTO: genera un pasajero en CADA estacion cada spawnInterval segundos
     if (m_config.autoSpawn && m_spawnClock.getElapsedTime().asSeconds() > m_config.spawnInterval) {
-        AutoSpawnPassenger();
+        for (size_t i = 0; i < m_redMetro.GetNumStations(); ++i) {
+            auto* st = m_redMetro.GetStation(i);
+            if (st) {
+                StationType targetType;
+                do { targetType = static_cast<StationType>(rand() % 10); } while (targetType == st->GetType());
+                m_pasajeros.emplace_back(m_nextPassengerId++, st->GetId(), targetType, st->GetPixelPos());
+                m_totalPassengers++;
+            }
+        }
         m_spawnClock.restart();
     }
 
@@ -280,17 +332,7 @@ void Game::Update(float deltaTime) {
 }
 
 void Game::AutoSpawnPassenger() {
-    if (m_redMetro.GetNumStations() < 2) return;
-    
-    int randIdx = rand() % m_redMetro.GetNumStations();
-    auto* st = m_redMetro.GetStation(randIdx);
-    if (!st) return;
-
-    StationType targetType;
-    do { targetType = static_cast<StationType>(rand() % 10); } while (targetType == st->GetType());
-
-    m_pasajeros.emplace_back(m_nextPassengerId++, st->GetId(), targetType, st->GetPixelPos());
-    m_totalPassengers++;
+    // esta funcion ya no se usa, el autopiloto esta en Update()
 }
 
 void Game::SaveMap() {
@@ -355,13 +397,11 @@ void Game::LoadMap() {
         }
     }
 
-    // creamos trenes para las lineas cargadas
     CreateTrainsForLines();
     std::cout << "Mapa cargado con exito!\n";
 }
 
 void Game::RunAI() {
-    // ... (el codigo de la IA se queda exactamente igual que en el hito 11) ...
     std::vector<CStation<StationTrait<int>>*> stations;
     for (size_t i = 0; i < m_redMetro.GetNumStations(); ++i) stations.push_back(m_redMetro.GetStation(i));
     
@@ -414,43 +454,4 @@ void Game::CreateTrainsForLines() {
             m_trenes.emplace_back(line.GetId(), &line, 0, m_trainCapacity); 
         }
     }
-}
-
-void Game::SetupConfig() {
-    std::cout << "\n=========================================\n";
-    std::cout << "   CONFIGURACION DE TRANSIT-OPT\n";
-    std::cout << "=========================================\n";
-    std::cout << "presiona enter pa usar el valor por defecto\n\n";
-
-    std::string input;
-
-    std::cout << "cuantas rutas maximas quieres crear? [" << m_config.maxLines << "]: ";
-    std::getline(std::cin, input);
-    if (!input.empty()) {
-        try { m_config.maxLines = std::stoi(input); } catch (...) {}
-    }
-
-    std::cout << "cuantos puentes maximos tienes? [" << m_config.maxBridges << "]: ";
-    std::getline(std::cin, input);
-    if (!input.empty()) {
-        try { m_config.maxBridges = std::stoi(input); } catch (...) {}
-    }
-
-    std::cout << "cuantos pasajeros caben en un tren? [" << m_trainCapacity << "]: ";
-    std::getline(std::cin, input);
-    if (!input.empty()) {
-        try { m_trainCapacity = std::stoi(input); } catch (...) {}
-    }
-
-    std::cout << "activar autopiloto de pasajeros? (s/n) [";
-    std::cout << (m_config.autoSpawn ? "s" : "n") << "]: ";
-    std::getline(std::cin, input);
-    if (!input.empty()) {
-        m_config.autoSpawn = (input == "s" || input == "S");
-    }
-
-    std::cout << "\nConfiguracion lista! Abriendo el simulador...\n";
-    std::cout << "Rutas: " << m_config.maxLines 
-              << " | Puentes: " << m_config.maxBridges 
-              << " | Capacidad: " << m_trainCapacity << "\n\n";
 }

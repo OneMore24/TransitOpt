@@ -38,7 +38,7 @@ Chromosome GeneticAlgorithm::CreateRandomChromosome() {
 
 float GeneticAlgorithm::EvaluateChromosome(Chromosome& c) {
     // 1. Castigo por usar muchas rutas (q use las menos posibles)
-    float penaltyLines = c.lines.size() * 50.0f; // si crea muchas lineas, el fitness sube (es peor)
+    float penaltyLines = c.lines.size() * 500.0f; // si crea muchas lineas, el fitness sube (es peor)
 
     // 2. Revisamos cuantos puentes usa creando un grafo temporal
     CGraph<StationTrait<int>> graph(m_stations.size() + 1);

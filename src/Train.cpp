@@ -11,6 +11,11 @@ void CTrain::Update(float deltaTime, const CGraph<StationTrait<int>>& graph) {
     const auto& stIds = m_line->GetStations();
     if (stIds.size() < 2) return;
 
+    // proteccion pa q no explote si el indise se sale de rango
+    if (static_cast<size_t>(m_currentStationIndex) >= stIds.size()) {
+        m_currentStationIndex = 0;
+    }
+
     auto* currentSt = graph.GetStationById(stIds[m_currentStationIndex]);
     if (!currentSt) return;
     
@@ -59,9 +64,8 @@ void CTrain::Draw(sf::RenderWindow& window, float offsetX) {
 }
 
 int CTrain::GetCurrentStationId(const CGraph<StationTrait<int>>& graph) const {
-    (void)graph; // quitamos warning
+    (void)graph; 
     const auto& stIds = m_line->GetStations();
-    // cambiamos el < a static_cast pa quitar el warning de signos
     if (stIds.empty() || static_cast<size_t>(m_currentStationIndex) >= stIds.size()) return -1;
     return stIds[m_currentStationIndex];
 }

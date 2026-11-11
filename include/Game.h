@@ -33,7 +33,7 @@ private:
     int m_trainCapacity;
     
     sf::Clock m_clock;
-    sf::Clock m_spawnClock; // reloj pal autopiloto
+    sf::Clock m_spawnClock;
     StationType m_tipos[10];
     sf::Font m_font; 
 
@@ -42,11 +42,11 @@ private:
     void RunAI();
     void CreateTrainsForLines();
     void LoadConfig();
+    void SetupConfig();
     void ClearMap();
     void AutoSpawnPassenger();
     void SaveMap();
     void LoadMap();
-    void SetupConfig();
 
 public:
     Game();
