@@ -6,6 +6,7 @@
 #include <thread>
 #include <queue>
 #include <numeric>
+#include <iostream>
 
 GeneticAlgorithm::GeneticAlgorithm(const std::vector<CStation<StationTrait<int>>*>& stations, 
                                    const CGrid<GridTrait<TerrainType>>& grid, 
@@ -97,17 +98,13 @@ float GeneticAlgorithm::EvaluateChromosome(Chromosome& c) {
     int diffPuentes = bridgesUsed - m_maxBridges;
     if (diffPuentes != 0) penaltyBridges = std::abs(diffPuentes) * 200000.0f;
 
-    // CASTIGO POR DESEQUILIBRIO (rutas muy distintas en tamaño)
     float penaltyImbalance = 0.0f;
     if (!lineSizes.empty()) {
         int maxSize = *std::max_element(lineSizes.begin(), lineSizes.end());
         int minSize = *std::min_element(lineSizes.begin(), lineSizes.end());
-        if (maxSize - minSize > 10) {
-            penaltyImbalance = (maxSize - minSize - 10) * 5000.0f;
-        }
+        if (maxSize - minSize > 10) penaltyImbalance = (maxSize - minSize - 10) * 5000.0f;
     }
 
-    // CASTIGO POR ESTACIONES DESCONECTADAS (BFS)
     int isolatedStations = 0;
     if (!m_stations.empty()) {
         std::set<int> visited;
@@ -127,22 +124,117 @@ float GeneticAlgorithm::EvaluateChromosome(Chromosome& c) {
     return totalDistance + penaltyBridges + penaltyImbalance + penaltyDisconnected;
 }
 
-// NUEVA MUTACION 2-OPT: Desenreda la ruta
+// Mutacion Adaptativa
 void GeneticAlgorithm::Mutate(Chromosome& c) {
     if (c.lines.empty()) return;
-    int lineIdx = rand() % c.lines.size();
-    auto& stations = const_cast<std::vector<int>&>(c.lines[lineIdx].GetStations());
     
-    if (stations.size() > 3 && rand() % 100 < 40) {
-        // 2-OPT: tomamos dos puntos y les damos la vuelta al tramo intermedio
-        int i = rand() % stations.size();
-        int j = rand() % stations.size();
-        if (i > j) std::swap(i, j);
-        
-        if (i != j && (j - i) > 1) {
-            std::reverse(stations.begin() + i, stations.begin() + j);
+    int tipoMutacion = rand() % 100;
+
+    if (tipoMutacion < 40) {
+        // 2-OPT (desenredar ruta)
+        int lineIdx = rand() % c.lines.size();
+        auto& stations = const_cast<std::vector<int>&>(c.lines[lineIdx].GetStations());
+        if (stations.size() > 3) {
+            int i = rand() % stations.size();
+            int j = rand() % stations.size();
+            if (i > j) std::swap(i, j);
+            if (i != j && (j - i) > 1) std::reverse(stations.begin() + i, stations.begin() + j);
         }
     }
+    else if (tipoMutacion < 70 && c.lines.size() > 1) {
+        // Mover estacion entre lineas (Cross-Line)
+        int lineA = rand() % c.lines.size();
+        int lineB = rand() % c.lines.size();
+        if (lineA != lineB) {
+            auto& stationsA = const_cast<std::vector<int>&>(c.lines[lineA].GetStations());
+            auto& stationsB = const_cast<std::vector<int>&>(c.lines[lineB].GetStations());
+            
+            if (stationsA.size() > 2) {
+                int idxToMove = rand() % stationsA.size();
+                int stationToMove = stationsA[idxToMove];
+                stationsA.erase(stationsA.begin() + idxToMove);
+                int insertPos = rand() % (stationsB.size() + 1);
+                stationsB.insert(stationsB.begin() + insertPos, stationToMove);
+            }
+        }
+    }
+    else {
+        // Cambiar estacion por otra cercana
+        int lineIdx = rand() % c.lines.size();
+        auto& stations = const_cast<std::vector<int>&>(c.lines[lineIdx].GetStations());
+        if (stations.size() > 2) {
+            int idxToChange = rand() % stations.size();
+            int neighborId = (idxToChange > 0) ? stations[idxToChange - 1] : stations[1];
+            
+            CStation<StationTrait<int>>* stNeighbor = nullptr;
+            for (auto* s : m_stations) if (s->GetId() == neighborId) stNeighbor = s;
+            
+            if (stNeighbor) {
+                std::vector<std::pair<float, int>> nearby;
+                for (auto* st : m_stations) {
+                    if (!c.lines[lineIdx].HasStation(st->GetId())) {
+                        float dx = stNeighbor->GetPixelPos().x - st->GetPixelPos().x;
+                        float dy = stNeighbor->GetPixelPos().y - st->GetPixelPos().y;
+                        nearby.push_back({std::sqrt(dx*dx + dy*dy), st->GetId()});
+                    }
+                }
+                std::sort(nearby.begin(), nearby.end());
+                if (!nearby.empty()) {
+                    int pickIdx = rand() % std::min(static_cast<int>(nearby.size()), 5);
+                    stations[idxToChange] = nearby[pickIdx].second;
+                }
+            }
+        }
+    }
+}
+
+// --- NUEVO CRUCE POR CAMINOS (PATH CROSSOVER) ---
+Chromosome GeneticAlgorithm::Crossover(const Chromosome& p1, const Chromosome& p2) {
+    Chromosome child;
+    if (p1.lines.empty()) return p2;
+    if (p2.lines.empty()) return p1;
+
+    for (int i = 0; i < m_maxLines; ++i) {
+        // Elegimos al azar de que padre heredar esta linea
+        const Chromosome& parent = (rand() % 2 == 0) ? p1 : p2;
+        
+        if (i >= static_cast<int>(parent.lines.size())) continue;
+        
+        CLine newLine(i + 1, sf::Color::Red);
+        auto& stInLine = parent.lines[i].GetStations();
+        
+        if (stInLine.size() < 2) continue;
+
+        // Tomamos la mitad de las estaciones del padre
+        int cutPoint = stInLine.size() / 2;
+        for (int j = 0; j < cutPoint; ++j) {
+            newLine.AddStation(stInLine[j]);
+        }
+        
+        // La otra mitad la tomamos del otro padre (si la tiene)
+        const Chromosome& otherParent = (rand() % 2 == 0) ? p1 : p2;
+        if (i < static_cast<int>(otherParent.lines.size())) {
+            auto& otherSt = otherParent.lines[i].GetStations();
+            for (size_t j = cutPoint; j < otherSt.size(); ++j) {
+                if (!newLine.HasStation(otherSt[j])) {
+                    newLine.AddStation(otherSt[j]);
+                }
+            }
+        }
+        if (newLine.GetStations().size() >= 2) child.lines.push_back(newLine);
+    }
+    
+        // Aseguramos que el hijo tenga exactamente el numero de rutas pedido
+    while (static_cast<int>(child.lines.size()) < m_maxLines && !p1.lines.empty()) {
+        child.lines.push_back(p1.lines[rand() % p1.lines.size()]);
+    }
+    
+    // CORRECCION: usamos pop_back() en lugar de resize() pa no crear CLine vacios
+    while (static_cast<int>(child.lines.size()) > m_maxLines) {
+        child.lines.pop_back();
+    }
+
+    return child;
 }
 
 std::vector<CLine> GeneticAlgorithm::Optimize() {
@@ -153,7 +245,15 @@ std::vector<CLine> GeneticAlgorithm::Optimize() {
     unsigned int numCores = std::thread::hardware_concurrency();
     if (numCores == 0) numCores = 4;
 
+    float bestFitnessEver = 999999999.0f;
+    int generationsWithoutImprovement = 0;
+
     for (int gen = 0; gen < m_generations; ++gen) {
+        // Tasa de mutacion dinamica: Alta al principio, baja al final
+        float mutationRate = 0.4f; // 40% inicial
+        if (gen > m_generations / 2) mutationRate = 0.15f;
+        if (gen > m_generations * 0.8f) mutationRate = 0.05f;
+
         for (int i = 0; i < m_populationSize; i += numCores) {
             std::vector<std::future<float>> futures;
             int batchEnd = std::min(i + static_cast<int>(numCores), m_populationSize);
@@ -167,6 +267,22 @@ std::vector<CLine> GeneticAlgorithm::Optimize() {
 
         std::sort(population.begin(), population.end(), [](const Chromosome& a, const Chromosome& b) { return a.fitness < b.fitness; });
 
+        if (population[0].fitness < bestFitnessEver - 0.01f) {
+            bestFitnessEver = population[0].fitness;
+            generationsWithoutImprovement = 0;
+        } else {
+            generationsWithoutImprovement++;
+        }
+
+        if (generationsWithoutImprovement >= 40) {
+            std::cout << "estancado en gen " << gen << ". inyectando inmigrantes...\n";
+            int numImmigrants = m_populationSize * 0.2f;
+            for (int i = 0; i < numImmigrants; ++i) {
+                population[m_populationSize - 1 - i] = CreateRandomChromosome();
+            }
+            generationsWithoutImprovement = 0;
+        }
+
         std::vector<Chromosome> newPop;
         for (int i = 0; i < 10 && i < m_populationSize; ++i) newPop.push_back(population[i]);
 
@@ -174,40 +290,42 @@ std::vector<CLine> GeneticAlgorithm::Optimize() {
             int p1 = rand() % 10;
             int p2 = rand() % 10;
             
-            Chromosome child;
-            if (!population[p1].lines.empty()) child.lines.push_back(population[p1].lines[0]);
+            // Usamos el nuevo cruce inteligente
+            Chromosome child = Crossover(population[p1], population[p2]);
             
-            for (auto& line : population[p1].lines) {
-                if (rand() % 2 == 0 && static_cast<int>(child.lines.size()) < m_maxLines) {
-                    child.lines.push_back(line);
-                }
-            }
-            
-            size_t idx = 1;
-            while (static_cast<int>(child.lines.size()) < m_maxLines && idx < population[p2].lines.size()) {
-                child.lines.push_back(population[p2].lines[idx]);
-                idx++;
-            }
-
-            if (rand() % 100 < 30) Mutate(child);
+            if ((rand() % 1000) / 1000.0f < mutationRate) Mutate(child);
             newPop.push_back(child);
         }
         population = newPop;
     }
 
-    // --- REFINAMIENTO FINAL (Aplicamos 2-opt a la mejor solucion) ---
-    std::cout << "aplicando refinamiento local...\n";
+    // --- REFINAMIENTO FINAL CON RECOCIDO SIMULADO ---
+    std::cout << "aplicando refinamiento con recocido simulado...\n";
     Chromosome best = population[0];
     float bestFit = EvaluateChromosome(best);
     
-    for (int iter = 0; iter < 500; ++iter) {
+    float temperature = 1000.0f; // Temperatura inicial alta
+    float coolingRate = 0.99f;   // Factor de enfriamiento
+    
+    for (int iter = 0; iter < 1000; ++iter) {
         Chromosome test = best;
         Mutate(test);
         float fit = EvaluateChromosome(test);
+        
         if (fit < bestFit) {
+            // Mejor solucion: la aceptamos
             best = test;
             bestFit = fit;
+        } else {
+            // Peor solucion: la aceptamos con cierta probabilidad (depende de la temperatura)
+            float delta = fit - bestFit;
+            float acceptanceProb = std::exp(-delta / temperature);
+            if ((rand() % 1000) / 1000.0f < acceptanceProb) {
+                best = test;
+                bestFit = fit;
+            }
         }
+        temperature *= coolingRate; // Enfriamiento
     }
 
     std::cout << "IA termino. Mejor fitness final: " << bestFit << "\n";

@@ -28,6 +28,7 @@ private:
     Chromosome CreateRandomChromosome();
     float EvaluateChromosome(Chromosome& c);
     void Mutate(Chromosome& c);
+    Chromosome Crossover(const Chromosome& p1, const Chromosome& p2);
 
 public:
     GeneticAlgorithm(const std::vector<CStation<StationTrait<int>>*>& stations, 
