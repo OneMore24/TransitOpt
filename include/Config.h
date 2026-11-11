@@ -10,7 +10,10 @@ struct GameConfig {
     int maxLines = 7;
     int passengerCapacity = 10;
     float passengerSpeed = 150.0f;
-    float trainSpeed = 100.0f; 
+    float trainSpeed = 100.0f;
+    
+    bool autoSpawn = false; 
+    float spawnInterval = 2.0f; // cada 2 segundos sale un pasajero
 };
 
 #endif

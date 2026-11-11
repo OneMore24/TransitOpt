@@ -9,9 +9,8 @@
         "velocidad_base": 150.0
     },
     "simulacion": {
-        "modo": "RUTA_DESCONOCIDA",
-        "cantidad_pasajeros": 500,
-        "generaciones_ia": 100,
-        "poblacion_ia": 50
+        "max_lineas": 7,
+        "autopiloto": false,
+        "intervalo_spawn": 2.0
     }
 }

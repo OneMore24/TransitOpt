@@ -2,16 +2,16 @@
 #include "Renderer.h"
 #include "GeneticAlgorithm.h"
 #include "Train.h"
-#include "json.hpp"
 #include <iostream>
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include "json.hpp"
 
 using json = nlohmann::json;
 
 Game::Game() 
-    : m_window(sf::VideoMode(sf::Vector2u(m_config.columns * m_config.cellSize + m_config.menuWidth, m_config.rows * m_config.cellSize)), "TransitOpt - Hito 10"),
+    : m_window(sf::VideoMode(sf::Vector2u(m_config.columns * m_config.cellSize + m_config.menuWidth, m_config.rows * m_config.cellSize)), "TransitOpt - Hito 12"),
       m_mapa(m_config.rows, m_config.columns, m_config.cellSize),
       m_redMetro(10),
       m_nextStationId(1), m_nextPassengerId(1), m_selectedStationId(-1),
@@ -20,14 +20,12 @@ Game::Game()
     
     m_window.setFramerateLimit(60);
 
-    // cargamos la fuente pal HUD (ruta tipica en linux)
     if (!m_font.openFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")) {
         std::cout << "no se pudo cargar la fuente, el HUD no se vera\n";
     }
 
     LoadConfig();
 
-    // colores base
     m_lineas.emplace_back(1, sf::Color::Red);
     m_lineas.emplace_back(2, sf::Color::Blue);
     m_lineas.emplace_back(3, sf::Color::Green);
@@ -48,25 +46,20 @@ void Game::LoadConfig() {
     if (f.is_open()) {
         json j;
         f >> j;
-        // leemos los parametros si existen en el json
-        if (j.contains("mapa")) {
-            m_config.maxBridges = j["mapa"].value("max_puentes", 3);
-        }
+        if (j.contains("mapa")) m_config.maxBridges = j["mapa"].value("max_puentes", 3);
         if (j.contains("simulacion")) {
             m_config.maxLines = j["simulacion"].value("max_lineas", 7);
+            m_config.autoSpawn = j["simulacion"].value("autopiloto", false);
+            m_config.spawnInterval = j["simulacion"].value("intervalo_spawn", 2.0f);
         }
         if (j.contains("flota")) {
             m_trainCapacity = j["flota"].value("capacidad_vagon", 10);
             m_config.trainSpeed = j["flota"].value("velocidad_base", 100.0f);
         }
-        std::cout << "config cargada: puentes=" << m_config.maxBridges << " lineas=" << m_config.maxLines << " capacidad=" << m_trainCapacity << "\n";
-    } else {
-        std::cout << "no hay config.json, usando valores por defecto\n";
     }
 }
 
 void Game::ClearMap() {
-    // borramos todo y reinisiamos contadores
     m_redMetro = CGraph<StationTrait<int>>(10);
     m_pasajeros.clear();
     m_trenes.clear();
@@ -85,7 +78,7 @@ void Game::ClearMap() {
     m_selectedStationId = -1;
     m_totalPassengers = 0;
     m_arrivedPassengers = 0;
-    m_window.setTitle("TransitOpt - Hito 10 | Rutas: 0");
+    m_window.setTitle("TransitOpt - Hito 12 | Rutas: 0");
 }
 
 void Game::Run() {
@@ -99,7 +92,18 @@ void Game::Run() {
         Renderer::DrawMap(m_window, m_mapa, m_config.menuWidth);
         Renderer::DrawLines(m_window, m_lineas, m_redMetro, m_mapa, m_config.menuWidth);
         
-        for (auto& tren : m_trenes) tren.Draw(m_window, m_config.menuWidth);
+        // dibujamos trenes y su capacidad
+        for (auto& tren : m_trenes) {
+            tren.Draw(m_window, m_config.menuWidth);
+            
+            // texto con la capacidad del tren
+            sf::Text capText(m_font);
+            capText.setCharacterSize(10);
+            capText.setFillColor(sf::Color::White);
+            capText.setString(std::to_string(tren.GetPassengers()) + "/" + std::to_string(tren.GetCapacity()));
+            capText.setPosition(sf::Vector2f(tren.GetPixelPos().x + m_config.menuWidth - 8, tren.GetPixelPos().y - 20));
+            m_window.draw(capText);
+        }
         
         Renderer::DrawStations(m_window, m_redMetro, m_selectedStationId, m_config.menuWidth, m_config.cellSize);
         Renderer::DrawPassengers(m_window, m_pasajeros, m_config.menuWidth);
@@ -110,7 +114,6 @@ void Game::Run() {
             Renderer::DrawStationShape(m_window, static_cast<StationType>(m_draggingType), mousePos, m_config.cellSize / 3.0f, sf::Color(255, 255, 255, 200));
         }
 
-        // dibujamos el HUD
         Renderer::DrawHUD(m_window, m_font, m_lineas.size(), m_totalPassengers, m_arrivedPassengers, m_trainCapacity, m_pausado);
         
         m_window.display();
@@ -128,8 +131,13 @@ void Game::ProcessEvents() {
             if (key->code == sf::Keyboard::Key::G) RunAI();
             if (key->code == sf::Keyboard::Key::P) m_pausado = !m_pausado;
             if (key->code == sf::Keyboard::Key::C) ClearMap();
+            if (key->code == sf::Keyboard::Key::A) {
+                m_config.autoSpawn = !m_config.autoSpawn;
+                std::cout << "autopiloto: " << (m_config.autoSpawn ? "ON" : "OFF") << "\n";
+            }
+            if (key->code == sf::Keyboard::Key::S) SaveMap();
+            if (key->code == sf::Keyboard::Key::L) LoadMap();
             
-            // ajustar capacidad de trenes con + y -
             if (key->code == sf::Keyboard::Key::Add) m_trainCapacity++;
             if (key->code == sf::Keyboard::Key::Subtract) {
                 if (m_trainCapacity > 1) m_trainCapacity--;
@@ -163,15 +171,12 @@ void Game::ProcessEvents() {
                     }
                 }
 
-                // click derecho = pasajero
                 if (mouseButton->button == sf::Mouse::Button::Right && mousePos.x >= m_config.menuWidth && !m_modoRio) {
                     sf::Vector2u gridCoords = m_mapa.GetGridCoords(mousePos.x - m_config.menuWidth, mousePos.y);
                     auto* clickedStation = m_redMetro.FindStationAt(gridCoords.x, gridCoords.y);
                     if (clickedStation != nullptr && m_redMetro.GetNumStations() > 1) {
                         StationType targetType;
                         do { targetType = static_cast<StationType>(rand() % 10); } while (targetType == clickedStation->GetType());
-
-                        // creamos el pasajero sin ruta, el solo la calculara
                         m_pasajeros.emplace_back(m_nextPassengerId++, clickedStation->GetId(), targetType, clickedStation->GetPixelPos());
                         m_totalPassengers++;
                     }
@@ -201,15 +206,18 @@ void Game::ProcessEvents() {
 void Game::Update(float deltaTime) {
     if (m_pausado) return;
 
-    // 1. actualisamos los trenes
+    // autopiloto de pasajeros
+    if (m_config.autoSpawn && m_spawnClock.getElapsedTime().asSeconds() > m_config.spawnInterval) {
+        AutoSpawnPassenger();
+        m_spawnClock.restart();
+    }
+
     for (auto& tren : m_trenes) tren.Update(deltaTime, m_redMetro);
 
-    // 2. logica de pasajeros
     for (auto it = m_pasajeros.begin(); it != m_pasajeros.end(); ) {
         bool deletePassenger = false;
 
         if (!it->IsOnBoard()) {
-            // --- PASAJERO ESPERANDO EN EL ANDEN ---
             if (!it->HasPath() || it->HasArrived()) {
                 std::vector<int> path = m_redMetro.FindShortestPathToType(it->GetCurrentStationId(), it->GetTargetType());
                 if (!path.empty()) it->SetPath(path);
@@ -238,7 +246,6 @@ void Game::Update(float deltaTime) {
                 }
             }
         } else {
-            // --- PASAJERO DENTRO DEL TREN ---
             for (auto& tren : m_trenes) {
                 if (tren.GetState() == TrainState::WAITING) {
                     int trainStationId = tren.GetCurrentStationId(m_redMetro);
@@ -271,14 +278,93 @@ void Game::Update(float deltaTime) {
     }
 }
 
+void Game::AutoSpawnPassenger() {
+    if (m_redMetro.GetNumStations() < 2) return;
+    
+    int randIdx = rand() % m_redMetro.GetNumStations();
+    auto* st = m_redMetro.GetStation(randIdx);
+    if (!st) return;
+
+    StationType targetType;
+    do { targetType = static_cast<StationType>(rand() % 10); } while (targetType == st->GetType());
+
+    m_pasajeros.emplace_back(m_nextPassengerId++, st->GetId(), targetType, st->GetPixelPos());
+    m_totalPassengers++;
+}
+
+void Game::SaveMap() {
+    json j;
+    j["stations"] = json::array();
+    for (size_t i = 0; i < m_redMetro.GetNumStations(); ++i) {
+        auto* st = m_redMetro.GetStation(i);
+        j["stations"].push_back({
+            {"id", st->GetId()},
+            {"x", st->GetGridX()},
+            {"y", st->GetGridY()},
+            {"type", static_cast<int>(st->GetType())}
+        });
+    }
+
+    j["lines"] = json::array();
+    for (auto& line : m_lineas) {
+        json lineJson;
+        lineJson["id"] = line.GetId();
+        lineJson["color"] = {line.GetColor().r, line.GetColor().g, line.GetColor().b};
+        lineJson["stations"] = line.GetStations();
+        j["lines"].push_back(lineJson);
+    }
+
+    std::ofstream f("mapa_guardado.json");
+    f << j.dump(4);
+    f.close();
+    std::cout << "Mapa guardado en mapa_guardado.json\n";
+}
+
+void Game::LoadMap() {
+    std::ifstream f("mapa_guardado.json");
+    if (!f.is_open()) {
+        std::cout << "no hay mapa guardado\n";
+        return;
+    }
+    
+    json j;
+    f >> j;
+    ClearMap();
+
+    for (auto& st : j["stations"]) {
+        sf::Vector2f pos((st["x"].get<int>() * m_config.cellSize) + (m_config.cellSize / 2.0f), 
+                         (st["y"].get<int>() * m_config.cellSize) + (m_config.cellSize / 2.0f));
+        m_redMetro.AddStation(st["id"], st["x"], st["y"], pos, static_cast<StationType>(st["type"].get<int>()));
+        if (st["id"].get<int>() >= m_nextStationId) m_nextStationId = st["id"].get<int>() + 1;
+    }
+
+    for (auto& lineJson : j["lines"]) {
+        CLine line(lineJson["id"], sf::Color(lineJson["color"][0], lineJson["color"][1], lineJson["color"][2]));
+        for (int stId : lineJson["stations"]) line.AddStation(stId);
+        m_lineas.push_back(line);
+        
+        const auto& stIds = line.GetStations();
+        for (size_t i = 0; i < stIds.size() - 1; ++i) {
+            auto* stA = m_redMetro.GetStationById(stIds[i]);
+            auto* stB = m_redMetro.GetStationById(stIds[i+1]);
+            if (stA && stB) {
+                bool cruza = m_mapa.IsRiverCrossing(stA->GetPixelPos().x, stA->GetPixelPos().y, stB->GetPixelPos().x, stB->GetPixelPos().y);
+                m_redMetro.AddEdge(stIds[i], stIds[i+1], cruza);
+            }
+        }
+    }
+
+    // creamos trenes para las lineas cargadas
+    CreateTrainsForLines();
+    std::cout << "Mapa cargado con exito!\n";
+}
+
 void Game::RunAI() {
+    // ... (el codigo de la IA se queda exactamente igual que en el hito 11) ...
     std::vector<CStation<StationTrait<int>>*> stations;
     for (size_t i = 0; i < m_redMetro.GetNumStations(); ++i) stations.push_back(m_redMetro.GetStation(i));
     
-    if (stations.size() < 2) {
-        std::cout << "pone mas estaciones!\n";
-        return;
-    }
+    if (stations.size() < 2) { std::cout << "pone mas estaciones!\n"; return; }
 
     std::vector<std::pair<int, StationType>> demands;
     for (auto* st : stations) {
@@ -292,10 +378,7 @@ void Game::RunAI() {
     GeneticAlgorithm ga(stations, m_mapa, m_config.maxBridges, m_config.maxLines, demands, 50, 50);
     std::vector<CLine> bestLines = ga.Optimize();
 
-    if (bestLines.empty()) {
-        std::cout << "la IA no encontro solucion\n";
-        return;
-    }
+    if (bestLines.empty()) { std::cout << "la IA no encontro solucion\n"; return; }
 
     m_redMetro.ClearEdges();
     m_lineas = bestLines;
