@@ -6,9 +6,7 @@
 #include <future>
 #include "Grid.h"
 #include "Graph.h"
-#include "Passenger.h"
 #include "Line.h"
-#include "Train.h"
 #include "Config.h"
 #include <vector>
 
@@ -19,23 +17,15 @@ private:
     CGrid<GridTrait<TerrainType>> m_mapa;
     CGraph<StationTrait<int>> m_redMetro;
     
-    std::vector<CPassenger> m_pasajeros;
     std::vector<CLine> m_lineas;
-    std::vector<CTrain> m_trenes;
     
     int m_nextStationId;
-    int m_nextPassengerId;
     int m_selectedStationId;
     int m_draggingType;
     bool m_modoRio;
     bool m_pausado;
     
-    int m_totalPassengers;
-    int m_arrivedPassengers;
-    int m_trainCapacity;
-    
     sf::Clock m_clock;
-    sf::Clock m_spawnClock;
     StationType m_tipos[10];
     sf::Font m_font; 
 
@@ -47,10 +37,8 @@ private:
     bool m_musicPlaying;
 
     void ProcessEvents();
-    void Update(float deltaTime);
     void RunAI();
     void FinishAIOptimization();
-    void CreateTrainsForLines();
     void LoadConfig();
     void SetupConfig();
     void ClearMap();

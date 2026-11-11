@@ -7,10 +7,9 @@
 GeneticAlgorithm::GeneticAlgorithm(const std::vector<CStation<StationTrait<int>>*>& stations, 
                                    const CGrid<GridTrait<TerrainType>>& grid, 
                                    int maxBridges, int maxLines,
-                                   const std::vector<std::pair<int, StationType>>& demands,
                                    int popSize, int gens)
     : m_stations(stations), m_grid(&grid), m_maxBridges(maxBridges), m_maxLines(maxLines),
-      m_demands(demands), m_populationSize(popSize), m_generations(gens) {}
+      m_populationSize(popSize), m_generations(gens) {}
 
 Chromosome GeneticAlgorithm::CreateRandomChromosome() {
     Chromosome c;
@@ -69,29 +68,34 @@ Chromosome GeneticAlgorithm::CreateRandomChromosome() {
 }
 
 float GeneticAlgorithm::EvaluateChromosome(Chromosome& c) {
-    CGraph<StationTrait<int>> graph(m_stations.size() + 1);
-    for (auto* st : m_stations) {
-        graph.AddStation(st->GetId(), st->GetGridX(), st->GetGridY(), st->GetPixelPos(), st->GetType());
-    }
-
     int bridgesUsed = 0;
     std::set<int> uniqueConnectedStations; 
+    float totalDistance = 0.0f;
 
     for (auto& line : c.lines) {
         auto& stationsInLine = line.GetStations();
         for (int stId : stationsInLine) uniqueConnectedStations.insert(stId);
         
         for (size_t i = 0; i < stationsInLine.size() - 1; ++i) {
-            auto* stA = graph.GetStationById(stationsInLine[i]);
-            auto* stB = graph.GetStationById(stationsInLine[i+1]);
+            // CORRECCION AQUI: le decimos explicitamente el tipo de puntero
+            CStation<StationTrait<int>>* stA = nullptr;
+            CStation<StationTrait<int>>* stB = nullptr;
+
+            for(auto* s : m_stations) {
+                if(s->GetId() == stationsInLine[i]) stA = s;
+                if(s->GetId() == stationsInLine[i+1]) stB = s;
+            }
             if (!stA || !stB) continue;
+
+            float dx = stA->GetPixelPos().x - stB->GetPixelPos().x;
+            float dy = stA->GetPixelPos().y - stB->GetPixelPos().y;
+            totalDistance += std::sqrt(dx*dx + dy*dy);
 
             bool cruzaRio = m_grid->IsRiverCrossing(stA->GetPixelPos().x, stA->GetPixelPos().y, stB->GetPixelPos().x, stB->GetPixelPos().y);
             if (cruzaRio) {
                 bridgesUsed++;
                 if (bridgesUsed > m_maxBridges) return 99999999.0f; 
             }
-            graph.AddEdge(stA->GetId(), stB->GetId(), cruzaRio);
         }
     }
 
@@ -99,25 +103,9 @@ float GeneticAlgorithm::EvaluateChromosome(Chromosome& c) {
     int disconnected = totalStations - uniqueConnectedStations.size();
     float penaltyDisconnected = disconnected * 50000.0f; 
 
-    float totalTime = 0.0f;
-    float speed = 150.0f;
-    for (auto& demand : m_demands) {
-        std::vector<int> path = graph.FindShortestPathToType(demand.first, demand.second);
-        if (path.empty()) {
-            totalTime += 10000.0f;
-        } else {
-            for (size_t i = 0; i < path.size() - 1; ++i) {
-                auto* stA = graph.GetStationById(path[i]);
-                auto* stB = graph.GetStationById(path[i+1]);
-                float dx = stA->GetPixelPos().x - stB->GetPixelPos().x;
-                float dy = stA->GetPixelPos().y - stB->GetPixelPos().y;
-                totalTime += (std::sqrt(dx*dx + dy*dy) / speed) + 1.0f;
-            }
-        }
-    }
+    float penaltyLines = c.lines.size() * 2000.0f;
 
-    float penaltyLines = c.lines.size() * 1000.0f;
-    return totalTime + penaltyDisconnected + penaltyLines;
+    return totalDistance + penaltyDisconnected + penaltyLines;
 }
 
 void GeneticAlgorithm::Mutate(Chromosome& c) {
@@ -155,12 +143,10 @@ std::vector<CLine> GeneticAlgorithm::Optimize() {
     std::vector<Chromosome> population(m_populationSize);
     for (int i = 0; i < m_populationSize; ++i) population[i] = CreateRandomChromosome();
 
-    // detectamos cuantos nucleos tiene el procesador pa no saturarlo y q no crashee
     unsigned int numCores = std::thread::hardware_concurrency();
     if (numCores == 0) numCores = 4;
 
     for (int gen = 0; gen < m_generations; ++gen) {
-        // evaluamos en lotes usando el numero de nucleos
         for (int i = 0; i < m_populationSize; i += numCores) {
             std::vector<std::future<float>> futures;
             int batchEnd = std::min(i + static_cast<int>(numCores), m_populationSize);

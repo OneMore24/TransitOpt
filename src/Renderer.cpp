@@ -1,5 +1,6 @@
 #include "Renderer.h"
 #include <cmath>
+#include <iostream>
 
 void Renderer::DrawStationShape(sf::RenderWindow& window, StationType type, sf::Vector2f pos, float size, sf::Color color) {
     sf::CircleShape circle(size);
@@ -51,7 +52,6 @@ void Renderer::DrawMap(sf::RenderWindow& window, const CGrid<GridTrait<TerrainTy
 void Renderer::DrawLines(sf::RenderWindow& window, const std::vector<CLine>& lineas, const CGraph<StationTrait<int>>& redMetro, const CGrid<GridTrait<TerrainType>>& mapa, float offsetX) {
     for (const auto& linea : lineas) {
         const auto& stationsInLine = linea.GetStations();
-        
         if (stationsInLine.size() < 2) continue;
 
         for (size_t i = 0; i < stationsInLine.size() - 1; ++i) {
@@ -80,22 +80,15 @@ void Renderer::DrawLines(sf::RenderWindow& window, const std::vector<CLine>& lin
             via.setRotation(sf::degrees(angle));
             via.setFillColor(linea.GetColor());
 
-            // revisamos si cruza el rio usando el mapa
             bool cruzaRio = mapa.IsRiverCrossing(stA->GetPixelPos().x, stA->GetPixelPos().y, stB->GetPixelPos().x, stB->GetPixelPos().y);
             
             if (cruzaRio) {
-                // si cruza el rio, le ponemos un borde blanco grueso pa q parezca un puente/tunel
                 via.setOutlineThickness(3.0f);
                 via.setOutlineColor(sf::Color::White);
-                // opcional: el relleno sea mas oscuro
-                sf::Color c = linea.GetColor();
-                via.setFillColor(sf::Color(c.r * 0.7, c.g * 0.7, c.b * 0.7));
             } else {
-                // si no cruza, un borde sutil pa q resalte
                 via.setOutlineThickness(1.0f);
                 via.setOutlineColor(sf::Color(0, 0, 0, 100));
             }
-
             window.draw(via);
         }
     }
@@ -107,16 +100,6 @@ void Renderer::DrawStations(sf::RenderWindow& window, const CGraph<StationTrait<
         sf::Color fill = (station->GetId() == selectedId) ? sf::Color::Green : sf::Color::White;
         sf::Vector2f drawPos(station->GetPixelPos().x + offsetX, station->GetPixelPos().y);
         DrawStationShape(window, station->GetType(), drawPos, cellSize / 3.0f, fill);
-    }
-}
-
-void Renderer::DrawPassengers(sf::RenderWindow& window, const std::vector<CPassenger>& pasajeros, float offsetX) {
-    for (const auto& p : pasajeros) {
-        sf::Vector2f pPos = p.GetPixelPos();
-        sf::CircleShape c(4); c.setOrigin(sf::Vector2f(4,4));
-        c.setPosition(sf::Vector2f(pPos.x + offsetX, pPos.y));
-        c.setFillColor(sf::Color::Red);
-        window.draw(c);
     }
 }
 
@@ -142,14 +125,12 @@ void Renderer::DrawMenu(sf::RenderWindow& window, const StationType tipos[10], i
     window.draw(lineIndicator);
 }
 
-void Renderer::DrawHUD(sf::RenderWindow& window, const sf::Font& font, int rutas, int totalPax, int arrivedPax, int capacidad, bool pausado) {
-    // panel semitransparente arriba a la derecha
-    sf::RectangleShape panel(sf::Vector2f(250, 120));
+void Renderer::DrawHUD(sf::RenderWindow& window, const sf::Font& font, int rutas, bool optimizando) {
+    sf::RectangleShape panel(sf::Vector2f(250, 60));
     panel.setPosition(sf::Vector2f(window.getSize().x - 260, 10));
     panel.setFillColor(sf::Color(0, 0, 0, 150));
     window.draw(panel);
 
-    // textos
     sf::Text text(font);
     text.setCharacterSize(16);
     text.setFillColor(sf::Color::White);
@@ -157,22 +138,9 @@ void Renderer::DrawHUD(sf::RenderWindow& window, const sf::Font& font, int rutas
     text.setString("Rutas activas: " + std::to_string(rutas));
     window.draw(text);
 
-    text.setPosition(sf::Vector2f(window.getSize().x - 250, 35));
-    text.setString("Pasajeros totales: " + std::to_string(totalPax));
-    window.draw(text);
-
-    text.setPosition(sf::Vector2f(window.getSize().x - 250, 55));
-    text.setString("Pasajeros llegados: " + std::to_string(arrivedPax));
-    window.draw(text);
-
-    text.setPosition(sf::Vector2f(window.getSize().x - 250, 75));
-    text.setString("Capacidad tren: " + std::to_string(capacidad) + " (+/-)");
-    window.draw(text);
-
-    // aviso de pausa
-    if (pausado) {
-        text.setPosition(sf::Vector2f(window.getSize().x - 250, 95));
-        text.setString("PAUSADO (tecla P)");
+    if (optimizando) {
+        text.setPosition(sf::Vector2f(window.getSize().x - 250, 35));
+        text.setString("IA trabajando...");
         text.setFillColor(sf::Color::Yellow);
         window.draw(text);
     }

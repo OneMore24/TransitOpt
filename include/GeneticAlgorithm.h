@@ -4,9 +4,8 @@
 #include <vector>
 #include <random>
 #include <future>
-#include <mutex>
 #include <iostream>
-#include <thread> // pa saber los nucleos
+#include <thread>
 #include "Graph.h"
 #include "Grid.h"
 #include "Station.h"
@@ -23,8 +22,6 @@ private:
     const CGrid<GridTrait<TerrainType>>* m_grid;
     int m_maxBridges;
     int m_maxLines;
-    
-    std::vector<std::pair<int, StationType>> m_demands;
     int m_populationSize;
     int m_generations;
 
@@ -36,7 +33,6 @@ public:
     GeneticAlgorithm(const std::vector<CStation<StationTrait<int>>*>& stations, 
                      const CGrid<GridTrait<TerrainType>>& grid, 
                      int maxBridges, int maxLines,
-                     const std::vector<std::pair<int, StationType>>& demands,
                      int popSize, int gens);
                      
     std::vector<CLine> Optimize();

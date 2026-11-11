@@ -1,12 +1,13 @@
+¡Claro que sí! Aquí tienes el contenido del `README.md` de forma aislada y limpia para que lo copies y lo pegues directamente en tu archivo, sin mezclarlo con el código de C++.
+
 ***
 
+```markdown
 # TransitOpt 🚇🧠
 
-Motor de simulación y optimización de redes de metro mediante **Algoritmos Genéticos** y **Programación Concurrente**, desarrollado en C++17.
+Motor de optimización de redes de transporte (Network Designer) utilizando **Algoritmos Genéticos** y **Programación Concurrente**, desarrollado en C++17.
 
-El usuario define el escenario (estaciones, río, límites de puentes y rutas) y la Inteligencia Artificial calcula la red de transporte más eficiente para mover a los pasajeros.
-
-
+El usuario define el escenario (estaciones, río y límites de puentes y rutas) y la Inteligencia Artificial calcula la topología de red más eficiente, conectando las estaciones más cercanas y minimizando el uso de puentes y líneas de metro.
 
 ## ⚙️ Requisitos del Sistema
 
@@ -39,19 +40,16 @@ make
 # 3. Ejecutar el simulador
 make run
 ```
-*(Al ejecutarse por primera vez, la terminal te pedirá configurar los parámetros iniciales: rutas máximas, puentes, capacidad de los trenes, población de la IA, etc.).*
+*(Al ejecutarse por primera vez, la terminal te pedirá configurar los parámetros iniciales: rutas máximas, puentes, población de la IA y generaciones).*
 
 ## 🎮 Controles del Simulador
 
 | Acción | Control |
 | :--- | :--- |
 | **Crear Estación** | Arrastrar (Drag & Drop) una figura desde el menú izquierdo al mapa. |
-| **Pintar Río** | Tecla `R` (mantener clic izquierdo para dibujar agua). |
-| **Crear Pasajero** | Clic Derecho sobre una estación. |
-| **Optimizar con IA** | Tecla `G` (Genera las rutas óptimas usando Algoritmos Genéticos). |
-| **Pausar / Reanudar** | Tecla `P`. |
+| **Pintar Río** | Tecla `R` (mantener clic izquierdo y arrastrar para dibujar agua). |
+| **Diseñar Red (IA)** | Tecla `G` (Genera la red óptima conectando estaciones cercanas). |
 | **Limpiar Mapa** | Tecla `C`. |
-| **Autopiloto** | Tecla `A` (Genera pasajeros automáticamente en todas las estaciones). |
 | **Guardar Mapa** | Tecla `S`. |
 | **Cargar Mapa** | Tecla `L`. |
 
@@ -60,15 +58,15 @@ make run
 *   `include/` y `src/`: Código fuente modular.
     *   `GeneticAlgorithm`: Motor de IA con hilos (`std::async`) y optimización evolutiva.
     *   `Grid`: Cuadrícula del mapa y detección de ríos (Algoritmo de Bresenham).
-    *   `Graph`: Estructura de grafos, Dijkstra y gestión de transbordos.
-    *   `Train` y `Passenger`: Lógica de simulación de flota y demanda.
+    *   `Graph`: Estructura de grafos para las conexiones de la red.
+    *   `Line`: Representación de las rutas de metro.
     *   `Renderer`: Interfaz gráfica separada de la lógica de negocio.
 *   `config.json`: Archivo de configuración de parámetros por defecto y playlist de música.
 *   `musica/`: Carpeta donde debes colocar tus canciones en formato **`.ogg`** o **`.wav`** para que suenen mientras la IA calcula.
 
 ## 🧠 Características Técnicas
 
-*   **IA Evolutiva:** Genera miles de redes posibles, cruza las mejores y muta para encontrar la ruta más corta minimizando el uso de rutas y puentes.
+*   **IA Evolutiva (Topológica):** Genera miles de redes posibles, cruza las mejores y muta para encontrar la combinación que conecta más estaciones usando la menor cantidad de vías (distancia) y rutas posibles.
 *   **Concurrencia:** El cálculo de la IA corre en un hilo secundario (`std::future`) para no congelar la interfaz gráfica (60 FPS estables). Uso de *Thread Pool* para no saturar la CPU.
 *   **Manejo de Memoria:** Uso de arreglos 1D contiguos (`m_pData`) para las celdas del mapa, maximizando el *CPU Cache*.
 *   **Persistencia:** Guardado y carga del ecosistema del mapa en formato JSON.
@@ -83,3 +81,4 @@ Este es un proyecto en constante evolución. Si tienes ideas para mejorar el alg
 
 ## 📝 Licencia
 Este proyecto está bajo la Licencia MIT. Siéntete libre de usarlo, modificarlo y aprender de él.
+```
