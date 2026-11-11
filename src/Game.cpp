@@ -25,6 +25,7 @@ Game::Game()
     }
 
     LoadConfig();
+    SetupConfig();  
 
     m_lineas.emplace_back(1, sf::Color::Red);
     m_lineas.emplace_back(2, sf::Color::Blue);
@@ -413,4 +414,43 @@ void Game::CreateTrainsForLines() {
             m_trenes.emplace_back(line.GetId(), &line, 0, m_trainCapacity); 
         }
     }
+}
+
+void Game::SetupConfig() {
+    std::cout << "\n=========================================\n";
+    std::cout << "   CONFIGURACION DE TRANSIT-OPT\n";
+    std::cout << "=========================================\n";
+    std::cout << "presiona enter pa usar el valor por defecto\n\n";
+
+    std::string input;
+
+    std::cout << "cuantas rutas maximas quieres crear? [" << m_config.maxLines << "]: ";
+    std::getline(std::cin, input);
+    if (!input.empty()) {
+        try { m_config.maxLines = std::stoi(input); } catch (...) {}
+    }
+
+    std::cout << "cuantos puentes maximos tienes? [" << m_config.maxBridges << "]: ";
+    std::getline(std::cin, input);
+    if (!input.empty()) {
+        try { m_config.maxBridges = std::stoi(input); } catch (...) {}
+    }
+
+    std::cout << "cuantos pasajeros caben en un tren? [" << m_trainCapacity << "]: ";
+    std::getline(std::cin, input);
+    if (!input.empty()) {
+        try { m_trainCapacity = std::stoi(input); } catch (...) {}
+    }
+
+    std::cout << "activar autopiloto de pasajeros? (s/n) [";
+    std::cout << (m_config.autoSpawn ? "s" : "n") << "]: ";
+    std::getline(std::cin, input);
+    if (!input.empty()) {
+        m_config.autoSpawn = (input == "s" || input == "S");
+    }
+
+    std::cout << "\nConfiguracion lista! Abriendo el simulador...\n";
+    std::cout << "Rutas: " << m_config.maxLines 
+              << " | Puentes: " << m_config.maxBridges 
+              << " | Capacidad: " << m_trainCapacity << "\n\n";
 }

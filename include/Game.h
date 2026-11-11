@@ -46,6 +46,7 @@ private:
     void AutoSpawnPassenger();
     void SaveMap();
     void LoadMap();
+    void SetupConfig();
 
 public:
     Game();
