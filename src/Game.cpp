@@ -6,7 +6,8 @@
 #include <cmath>
 #include <fstream>
 #include <random>
-#include <limits> // <--- Pa el cin.ignore
+#include <limits>
+#include <ctime>
 #include "json.hpp"
 
 using json = nlohmann::json;
@@ -18,25 +19,23 @@ Game::Game()
       m_draggingType(-1), m_modoRio(false), m_pausado(false),
       m_isOptimizing(false), m_currentTrackIndex(0), m_musicPlaying(false) {
     
+    // Semilla real pa q cada ejecucion sea diferente
+    std::srand(static_cast<unsigned int>(std::time(nullptr)));
+
     LoadConfig();      
     SetupConfig();     
 
-    // Limpiamos la cola de la terminal pa q no se disparen teclas
     std::cin.clear();
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
-    // Creamos la ventana DESPUES de configurar
     m_window.create(sf::VideoMode(sf::Vector2u(m_config.columns * m_config.cellSize + m_config.menuWidth, m_config.rows * m_config.cellSize)), "TransitOpt - Network Designer");
     m_window.setFramerateLimit(60);
-
-    // Resetiamos la vista pa q se vea todo bien
     m_window.setView(sf::View(sf::FloatRect(sf::Vector2f(0, 0), sf::Vector2f(m_window.getSize().x, m_window.getSize().y))));
 
     if (!m_font.openFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")) {
         std::cout << "no se pudo cargar la fuente, el HUD no se vera\n";
     }
 
-    // Limpiamos eventos residuales
     while (m_window.pollEvent()) {}
 
     m_tipos[0] = StationType::CIRCULO; m_tipos[1] = StationType::CUADRADO;
@@ -94,7 +93,7 @@ void Game::SetupConfig() {
 }
 
 void Game::ClearMap() {
-    m_redMetro = CGraph<StationTrait<int>>(10);
+    m_redMetro.Clear(); // Usamos el nuevo metodo seguro
     m_lineas.clear();
     m_nextStationId = 1;
     m_selectedStationId = -1;
@@ -153,6 +152,9 @@ void Game::Run() {
 void Game::ProcessEvents() {
     while (const std::optional event = m_window.pollEvent()) {
         if (event->is<sf::Event::Closed>()) m_window.close();
+
+        // RACE CONDITION FIX: Si la IA esta trabajando, ignoramos todo input
+        if (m_isOptimizing) continue;
 
         sf::Vector2f mousePos = m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window));
 

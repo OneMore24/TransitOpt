@@ -7,6 +7,7 @@
 #include <iostream>
 #include <thread>
 #include <atomic>
+#include <unordered_map>
 #include "Graph.h"
 #include "Grid.h"
 #include "Station.h"
@@ -14,7 +15,7 @@
 
 struct Chromosome {
     std::vector<CLine> lines;
-    float fitness;
+    float fitness = 999999999.0f; // inicializado por defecto
 };
 
 class GeneticAlgorithm {
@@ -26,9 +27,13 @@ private:
     int m_populationSize;
     int m_generations;
 
-    // variables atomicas pa el feedback visual
     std::atomic<int> m_currentGen;
     std::atomic<float> m_bestFitness;
+
+    // matrices precalculadas pa aselerar la evaluacion
+    std::vector<std::vector<float>> m_distMatrix;
+    std::vector<std::vector<bool>> m_riverMatrix;
+    std::unordered_map<int, size_t> m_idToIndex; // mapea ID de estacion -> indice del vector
 
     Chromosome CreateRandomChromosome();
     float EvaluateChromosome(Chromosome& c);
@@ -43,7 +48,6 @@ public:
                      
     std::vector<CLine> Optimize();
 
-    //getters pa q la ventana los lea
     int GetCurrentGeneration() const { return m_currentGen.load(); }
     float GetBestFitness() const { return m_bestFitness.load(); }
 };

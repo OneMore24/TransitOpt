@@ -13,7 +13,8 @@ GeneticAlgorithm::GeneticAlgorithm(const std::vector<CStation<StationTrait<int>>
                                    int maxBridges, int maxLines,
                                    int popSize, int gens)
     : m_stations(stations), m_grid(&grid), m_maxBridges(maxBridges), m_maxLines(maxLines),
-      m_populationSize(popSize), m_generations(gens), m_currentGen(0), m_bestFitness(999999999.0f) {}
+      m_populationSize(popSize), m_generations(gens),
+      m_currentGen(0), m_bestFitness(999999999.0f) {}
 
 Chromosome GeneticAlgorithm::CreateRandomChromosome() {
     Chromosome c;
@@ -60,30 +61,29 @@ float GeneticAlgorithm::EvaluateChromosome(Chromosome& c) {
     std::set<std::pair<int, int>> uniqueEdges;
     std::map<int, std::vector<int>> adj;
     
-    int totalStations = m_stations.size();
+    size_t totalStations = m_stations.size();
     if (totalStations == 0) return 0.0f;
 
     std::vector<int> lineSizes;
     for (auto& line : c.lines) {
         lineSizes.push_back(line.GetStations().size());
         auto& stationsInLine = line.GetStations();
+        if (stationsInLine.size() < 2) continue; // proteccion contra underflow
+
         for (size_t i = 0; i < stationsInLine.size() - 1; ++i) {
             int id1 = stationsInLine[i];
             int id2 = stationsInLine[i+1];
-            CStation<StationTrait<int>>* stA = nullptr;
-            CStation<StationTrait<int>>* stB = nullptr;
-            for(auto* s : m_stations) {
-                if(s->GetId() == id1) stA = s;
-                if(s->GetId() == id2) stB = s;
-            }
-            if (!stA || !stB) continue;
+            
+            auto itA = m_idToIndex.find(id1);
+            auto itB = m_idToIndex.find(id2);
+            if (itA == m_idToIndex.end() || itB == m_idToIndex.end()) continue;
 
-            float dx = stA->GetPixelPos().x - stB->GetPixelPos().x;
-            float dy = stA->GetPixelPos().y - stB->GetPixelPos().y;
-            totalDistance += std::sqrt(dx*dx + dy*dy);
+            size_t idxA = itA->second;
+            size_t idxB = itB->second;
 
-            bool cruzaRio = m_grid->IsRiverCrossing(stA->GetPixelPos().x, stA->GetPixelPos().y, stB->GetPixelPos().x, stB->GetPixelPos().y);
-            if (cruzaRio) bridgesUsed++;
+            // ACCESO DIRECTO A LAS MATRICES PRECALCULADAS
+            totalDistance += m_distMatrix[idxA][idxB];
+            if (m_riverMatrix[idxA][idxB]) bridgesUsed++;
 
             adj[id1].push_back(id2);
             adj[id2].push_back(id1);
@@ -124,14 +124,12 @@ float GeneticAlgorithm::EvaluateChromosome(Chromosome& c) {
     return totalDistance + penaltyBridges + penaltyImbalance + penaltyDisconnected;
 }
 
-// Mutacion Adaptativa
 void GeneticAlgorithm::Mutate(Chromosome& c) {
     if (c.lines.empty()) return;
     
     int tipoMutacion = rand() % 100;
 
     if (tipoMutacion < 40) {
-        // 2-OPT (desenredar ruta)
         int lineIdx = rand() % c.lines.size();
         auto& stations = const_cast<std::vector<int>&>(c.lines[lineIdx].GetStations());
         if (stations.size() > 3) {
@@ -142,7 +140,6 @@ void GeneticAlgorithm::Mutate(Chromosome& c) {
         }
     }
     else if (tipoMutacion < 70 && c.lines.size() > 1) {
-        // Mover estacion entre lineas (Cross-Line)
         int lineA = rand() % c.lines.size();
         int lineB = rand() % c.lines.size();
         if (lineA != lineB) {
@@ -159,7 +156,6 @@ void GeneticAlgorithm::Mutate(Chromosome& c) {
         }
     }
     else {
-        // Cambiar estacion por otra cercana
         int lineIdx = rand() % c.lines.size();
         auto& stations = const_cast<std::vector<int>&>(c.lines[lineIdx].GetStations());
         if (stations.size() > 2) {
@@ -188,14 +184,12 @@ void GeneticAlgorithm::Mutate(Chromosome& c) {
     }
 }
 
-// --- NUEVO CRUCE POR CAMINOS (PATH CROSSOVER) ---
 Chromosome GeneticAlgorithm::Crossover(const Chromosome& p1, const Chromosome& p2) {
     Chromosome child;
     if (p1.lines.empty()) return p2;
     if (p2.lines.empty()) return p1;
 
     for (int i = 0; i < m_maxLines; ++i) {
-        // Elegimos al azar de que padre heredar esta linea
         const Chromosome& parent = (rand() % 2 == 0) ? p1 : p2;
         
         if (i >= static_cast<int>(parent.lines.size())) continue;
@@ -205,13 +199,11 @@ Chromosome GeneticAlgorithm::Crossover(const Chromosome& p1, const Chromosome& p
         
         if (stInLine.size() < 2) continue;
 
-        // Tomamos la mitad de las estaciones del padre
         int cutPoint = stInLine.size() / 2;
         for (int j = 0; j < cutPoint; ++j) {
             newLine.AddStation(stInLine[j]);
         }
         
-        // La otra mitad la tomamos del otro padre (si la tiene)
         const Chromosome& otherParent = (rand() % 2 == 0) ? p1 : p2;
         if (i < static_cast<int>(otherParent.lines.size())) {
             auto& otherSt = otherParent.lines[i].GetStations();
@@ -224,12 +216,11 @@ Chromosome GeneticAlgorithm::Crossover(const Chromosome& p1, const Chromosome& p
         if (newLine.GetStations().size() >= 2) child.lines.push_back(newLine);
     }
     
-        // Aseguramos que el hijo tenga exactamente el numero de rutas pedido
+    // Aseguramos el numero exacto de rutas
     while (static_cast<int>(child.lines.size()) < m_maxLines && !p1.lines.empty()) {
         child.lines.push_back(p1.lines[rand() % p1.lines.size()]);
     }
     
-    // CORRECCION: usamos pop_back() en lugar de resize() pa no crear CLine vacios
     while (static_cast<int>(child.lines.size()) > m_maxLines) {
         child.lines.pop_back();
     }
@@ -239,6 +230,29 @@ Chromosome GeneticAlgorithm::Crossover(const Chromosome& p1, const Chromosome& p
 
 std::vector<CLine> GeneticAlgorithm::Optimize() {
     std::cout << "iniciando IA con " << m_populationSize << " redes y " << m_generations << " generaciones...\n";
+    
+    // --- PRECALCULAMOS LAS MATRICES PA ACELERAR TODO ---
+    size_t n = m_stations.size();
+    m_idToIndex.clear();
+    for (size_t i = 0; i < n; ++i) {
+        m_idToIndex[m_stations[i]->GetId()] = i;
+    }
+
+    m_distMatrix.assign(n, std::vector<float>(n, 0.0f));
+    m_riverMatrix.assign(n, std::vector<bool>(n, false));
+    
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < n; ++j) {
+            float dx = m_stations[i]->GetPixelPos().x - m_stations[j]->GetPixelPos().x;
+            float dy = m_stations[i]->GetPixelPos().y - m_stations[j]->GetPixelPos().y;
+            m_distMatrix[i][j] = std::sqrt(dx*dx + dy*dy);
+            m_riverMatrix[i][j] = m_grid->IsRiverCrossing(
+                m_stations[i]->GetPixelPos().x, m_stations[i]->GetPixelPos().y,
+                m_stations[j]->GetPixelPos().x, m_stations[j]->GetPixelPos().y
+            );
+        }
+    }
+
     std::vector<Chromosome> population(m_populationSize);
     for (int i = 0; i < m_populationSize; ++i) population[i] = CreateRandomChromosome();
 
@@ -249,8 +263,7 @@ std::vector<CLine> GeneticAlgorithm::Optimize() {
     int generationsWithoutImprovement = 0;
 
     for (int gen = 0; gen < m_generations; ++gen) {
-        // Tasa de mutacion dinamica: Alta al principio, baja al final
-        float mutationRate = 0.4f; // 40% inicial
+        float mutationRate = 0.4f;
         if (gen > m_generations / 2) mutationRate = 0.15f;
         if (gen > m_generations * 0.8f) mutationRate = 0.05f;
 
@@ -267,7 +280,6 @@ std::vector<CLine> GeneticAlgorithm::Optimize() {
 
         std::sort(population.begin(), population.end(), [](const Chromosome& a, const Chromosome& b) { return a.fitness < b.fitness; });
 
-        // actualisamos las variables atomicas pa la UI
         m_currentGen = gen;
         m_bestFitness = population[0].fitness;
 
@@ -290,11 +302,20 @@ std::vector<CLine> GeneticAlgorithm::Optimize() {
         std::vector<Chromosome> newPop;
         for (int i = 0; i < 10 && i < m_populationSize; ++i) newPop.push_back(population[i]);
 
+        // seleccion por torneo (mejor diversidad)
+        auto tournamentSelect = [&]() {
+            int bestIdx = rand() % m_populationSize;
+            for (int k = 1; k < 3; ++k) {
+                int idx = rand() % m_populationSize;
+                if (population[idx].fitness < population[bestIdx].fitness) bestIdx = idx;
+            }
+            return bestIdx;
+        };
+
         while (static_cast<int>(newPop.size()) < m_populationSize) {
-            int p1 = rand() % 10;
-            int p2 = rand() % 10;
+            int p1 = tournamentSelect();
+            int p2 = tournamentSelect();
             
-            // Usamos el nuevo cruce inteligente
             Chromosome child = Crossover(population[p1], population[p2]);
             
             if ((rand() % 1000) / 1000.0f < mutationRate) Mutate(child);
@@ -303,33 +324,40 @@ std::vector<CLine> GeneticAlgorithm::Optimize() {
         population = newPop;
     }
 
-    // --- REFINAMIENTO FINAL CON RECOCIDO SIMULADO ---
+    // --- REFINAMIENTO CON RECOCIDO SIMULADO ---
     std::cout << "aplicando refinamiento con recocido simulado...\n";
-    Chromosome best = population[0];
-    float bestFit = EvaluateChromosome(best);
     
-    float temperature = 1000.0f; // Temperatura inicial alta
-    float coolingRate = 0.99f;   // Factor de enfriamiento
+    Chromosome current = population[0];
+    float currentFit = EvaluateChromosome(current);
+    Chromosome best = current;
+    float bestFit = currentFit;
+    
+    float temperature = 1000.0f;
+    float coolingRate = 0.99f;
     
     for (int iter = 0; iter < 1000; ++iter) {
-        Chromosome test = best;
+        Chromosome test = current;
         Mutate(test);
         float fit = EvaluateChromosome(test);
         
-        if (fit < bestFit) {
-            // Mejor solucion: la aceptamos
-            best = test;
-            bestFit = fit;
+        if (fit < currentFit) {
+            current = test;
+            currentFit = fit;
         } else {
-            // Peor solucion: la aceptamos con cierta probabilidad (depende de la temperatura)
-            float delta = fit - bestFit;
+            float delta = fit - currentFit;
             float acceptanceProb = std::exp(-delta / temperature);
             if ((rand() % 1000) / 1000.0f < acceptanceProb) {
-                best = test;
-                bestFit = fit;
+                current = test;
+                currentFit = fit;
             }
         }
-        temperature *= coolingRate; // Enfriamiento
+        
+        // actualizamos el mejor absoluto
+        if (currentFit < bestFit) {
+            best = current;
+            bestFit = currentFit;
+        }
+        temperature *= coolingRate;
     }
 
     std::cout << "IA termino. Mejor fitness final: " << bestFit << "\n";

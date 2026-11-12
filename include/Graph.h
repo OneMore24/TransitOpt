@@ -10,6 +10,7 @@
 #include <map>
 #include <cmath>
 
+// estructura pa las vias
 struct CEdge {
     int m_idStationA;
     int m_idStationB;
@@ -45,7 +46,16 @@ public:
     size_t GetNumEdges() const { return m_numEdges; }
     CEdge GetEdge(size_t index) const { return m_pEdges[index]; }
 
-    // dijkstra pero busca el tipo mas sercano, no un id
+    // metodo seguro pa limpiar el mapa sin dejar puntetos colgados
+    void Clear() {
+        for (size_t i = 0; i < m_numStations; ++i) {
+            delete m_pStations[i];
+            m_pStations[i] = nullptr;
+        }
+        m_numStations = 0;
+        m_numEdges = 0;
+    }
+
     std::vector<int> FindShortestPathToType(int startId, ::StationType targetType) const;
 };
 
@@ -139,11 +149,10 @@ std::vector<int> CGraph<Traits>::FindShortestPathToType(int startId, ::StationTy
 
         if (d > dist[u]) continue;
 
-        // si la estasion actual es del tipo q buscamos (y no es la de origen), llegamos
         auto* stU = GetStationById(u);
         if (stU->GetType() == targetType && u != startId) {
             targetStationId = u;
-            break; // salimos xq ya encontramos la mas sercana
+            break;
         }
 
         for (size_t i = 0; i < m_numEdges; ++i) {
@@ -154,10 +163,9 @@ std::vector<int> CGraph<Traits>::FindShortestPathToType(int startId, ::StationTy
 
             if (v != -1) {
                 auto* stV = GetStationById(v);
-                // calculamos la distancia real en pixeles
                 float dx = stU->GetPixelPos().x - stV->GetPixelPos().x;
                 float dy = stU->GetPixelPos().y - stV->GetPixelPos().y;
-                float weight = std::sqrt(dx*dx + dy*dy) / 30.0f; // normalisado a celdas
+                float weight = std::sqrt(dx*dx + dy*dy) / 30.0f;
 
                 if (dist[u] + weight < dist[v]) {
                     dist[v] = dist[u] + weight;
@@ -179,4 +187,4 @@ std::vector<int> CGraph<Traits>::FindShortestPathToType(int startId, ::StationTy
     return path;
 }
 
-#endif // __GRAPH_H__
+#endif
