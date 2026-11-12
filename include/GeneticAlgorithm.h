@@ -8,6 +8,7 @@
 #include <thread>
 #include <atomic>
 #include <unordered_map>
+#include <functional>
 #include "Graph.h"
 #include "Grid.h"
 #include "Station.h"
@@ -15,7 +16,7 @@
 
 struct Chromosome {
     std::vector<CLine> lines;
-    float fitness = 999999999.0f; // inicializado por defecto
+    float fitness = 999999999.0f;
 };
 
 class GeneticAlgorithm {
@@ -30,15 +31,22 @@ private:
     std::atomic<int> m_currentGen;
     std::atomic<float> m_bestFitness;
 
-    // matrices precalculadas pa aselerar la evaluacion
+    // matrices precalculadas
     std::vector<std::vector<float>> m_distMatrix;
     std::vector<std::vector<bool>> m_riverMatrix;
-    std::unordered_map<int, size_t> m_idToIndex; // mapea ID de estacion -> indice del vector
+    std::unordered_map<int, size_t> m_idToIndex;
+
+    // benchmark MST
+    std::vector<CLine> m_seedLines;
+    float m_mstCost = 0.0f;
 
     Chromosome CreateRandomChromosome();
     float EvaluateChromosome(Chromosome& c);
     void Mutate(Chromosome& c);
     Chromosome Crossover(const Chromosome& p1, const Chromosome& p2);
+
+    // NUEVO: genera la semilla basada en MST
+    void GenerateMSTSeed();
 
 public:
     GeneticAlgorithm(const std::vector<CStation<StationTrait<int>>*>& stations, 
@@ -50,6 +58,9 @@ public:
 
     int GetCurrentGeneration() const { return m_currentGen.load(); }
     float GetBestFitness() const { return m_bestFitness.load(); }
+    
+    // costo teorico minimo (MST)
+    float GetMSTCost() const { return m_mstCost; }
 };
 
 #endif

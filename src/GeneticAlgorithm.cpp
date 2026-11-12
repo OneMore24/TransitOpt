@@ -7,6 +7,23 @@
 #include <queue>
 #include <numeric>
 #include <iostream>
+#include <functional>
+#include <unordered_set>
+
+// Estructura Union-Find pal algoritmo de Kruskal
+struct DSU {
+    std::unordered_map<int, int> parent;
+    int find(int x) {
+        if (parent.find(x) == parent.end()) parent[x] = x;
+        if (parent[x] != x) parent[x] = find(parent[x]);
+        return parent[x];
+    }
+    void unite(int x, int y) {
+        int px = find(x), py = find(y);
+        if (px != py) parent[px] = py;
+    }
+    bool connected(int x, int y) { return find(x) == find(y); }
+};
 
 GeneticAlgorithm::GeneticAlgorithm(const std::vector<CStation<StationTrait<int>>*>& stations, 
                                    const CGrid<GridTrait<TerrainType>>& grid, 
@@ -15,6 +32,79 @@ GeneticAlgorithm::GeneticAlgorithm(const std::vector<CStation<StationTrait<int>>
     : m_stations(stations), m_grid(&grid), m_maxBridges(maxBridges), m_maxLines(maxLines),
       m_populationSize(popSize), m_generations(gens),
       m_currentGen(0), m_bestFitness(999999999.0f) {}
+
+// Genera una semilla usando Kruskal (Arbol de Expansion Minima)
+void GeneticAlgorithm::GenerateMSTSeed() {
+    m_seedLines.clear();
+    m_mstCost = 0.0f;
+    if (m_stations.size() < 2) return;
+
+    // 1. Creamos todas las aristas posibles con su distancia
+    struct Edge { float weight; float distanceOnly; int u, v; };
+    std::vector<Edge> allEdges;
+
+    for (size_t i = 0; i < m_stations.size(); ++i) {
+        for (size_t j = i + 1; j < m_stations.size(); ++j) {
+            int id1 = m_stations[i]->GetId();
+            int id2 = m_stations[j]->GetId();
+            float dx = m_stations[i]->GetPixelPos().x - m_stations[j]->GetPixelPos().x;
+            float dy = m_stations[i]->GetPixelPos().y - m_stations[j]->GetPixelPos().y;
+            float dist = std::sqrt(dx*dx + dy*dy);
+            bool cruza = m_grid->IsRiverCrossing(
+                m_stations[i]->GetPixelPos().x, m_stations[i]->GetPixelPos().y,
+                m_stations[j]->GetPixelPos().x, m_stations[j]->GetPixelPos().y
+            );
+            // El MST prefiere no cruzar el rio (con un pequeño castigo)
+            float weight = dist + (cruza ? 50.0f : 0.0f);
+            allEdges.push_back({weight, dist, id1, id2});
+        }
+    }
+
+    // 2. Ordenamos por peso y aplicamos Kruskal
+    std::sort(allEdges.begin(), allEdges.end(), [](const Edge& a, const Edge& b) { return a.weight < b.weight; });
+
+    DSU dsu;
+    std::vector<Edge> mstEdges;
+    for (auto& e : allEdges) {
+        if (!dsu.connected(e.u, e.v)) {
+            dsu.unite(e.u, e.v);
+            mstEdges.push_back(e);
+            m_mstCost += e.distanceOnly; // sumamos solo la distancia (sin castigo)
+        }
+    }
+
+    // 3. Construimos la lista de adyacencia del MST
+    std::map<int, std::vector<int>> adj;
+    for (auto& e : mstEdges) {
+        adj[e.u].push_back(e.v);
+        adj[e.v].push_back(e.u);
+    }
+
+    // 4. Recorrido DFS pa generar un "tour" que visite todas las estaciones
+    std::vector<int> tour;
+    std::set<int> visited;
+    std::function<void(int)> dfs = [&](int u) {
+        visited.insert(u);
+        tour.push_back(u);
+        for (int v : adj[u]) {
+            if (!visited.count(v)) dfs(v);
+        }
+    };
+    dfs(m_stations[0]->GetId());
+
+    // 5. Partimos el tour en m_maxLines lineas
+    if (tour.size() < 2) return;
+    int chunkSize = std::max(2, static_cast<int>(std::ceil(static_cast<float>(tour.size()) / m_maxLines)));
+    
+    int lineId = 1;
+    for (size_t i = 0; i < tour.size() && lineId <= m_maxLines; i += chunkSize) {
+        CLine line(lineId++, sf::Color::Red);
+        for (size_t j = i; j < std::min(i + chunkSize + 1, tour.size()); ++j) {
+            if (!line.HasStation(tour[j])) line.AddStation(tour[j]);
+        }
+        if (line.GetStations().size() >= 2) m_seedLines.push_back(line);
+    }
+}
 
 Chromosome GeneticAlgorithm::CreateRandomChromosome() {
     Chromosome c;
@@ -68,7 +158,7 @@ float GeneticAlgorithm::EvaluateChromosome(Chromosome& c) {
     for (auto& line : c.lines) {
         lineSizes.push_back(line.GetStations().size());
         auto& stationsInLine = line.GetStations();
-        if (stationsInLine.size() < 2) continue; // proteccion contra underflow
+        if (stationsInLine.size() < 2) continue;
 
         for (size_t i = 0; i < stationsInLine.size() - 1; ++i) {
             int id1 = stationsInLine[i];
@@ -81,7 +171,6 @@ float GeneticAlgorithm::EvaluateChromosome(Chromosome& c) {
             size_t idxA = itA->second;
             size_t idxB = itB->second;
 
-            // ACCESO DIRECTO A LAS MATRICES PRECALCULADAS
             totalDistance += m_distMatrix[idxA][idxB];
             if (m_riverMatrix[idxA][idxB]) bridgesUsed++;
 
@@ -216,7 +305,6 @@ Chromosome GeneticAlgorithm::Crossover(const Chromosome& p1, const Chromosome& p
         if (newLine.GetStations().size() >= 2) child.lines.push_back(newLine);
     }
     
-    // Aseguramos el numero exacto de rutas
     while (static_cast<int>(child.lines.size()) < m_maxLines && !p1.lines.empty()) {
         child.lines.push_back(p1.lines[rand() % p1.lines.size()]);
     }
@@ -231,7 +319,7 @@ Chromosome GeneticAlgorithm::Crossover(const Chromosome& p1, const Chromosome& p
 std::vector<CLine> GeneticAlgorithm::Optimize() {
     std::cout << "iniciando IA con " << m_populationSize << " redes y " << m_generations << " generaciones...\n";
     
-    // --- PRECALCULAMOS LAS MATRICES PA ACELERAR TODO ---
+    // --- PRECALCULAMOS LAS MATRICES ---
     size_t n = m_stations.size();
     m_idToIndex.clear();
     for (size_t i = 0; i < n; ++i) {
@@ -253,8 +341,21 @@ std::vector<CLine> GeneticAlgorithm::Optimize() {
         }
     }
 
+    // --- GENERAMOS EL MST COMO BENCHMARK Y SEMILLA ---
+    GenerateMSTSeed();
+    std::cout << "MST calculado. Costo teorico minimo (sin restricciones): " << m_mstCost << "\n";
+    std::cout << "Semilla MST generada con " << m_seedLines.size() << " lineas\n";
+
     std::vector<Chromosome> population(m_populationSize);
-    for (int i = 0; i < m_populationSize; ++i) population[i] = CreateRandomChromosome();
+    for (int i = 0; i < m_populationSize; ++i) {
+        // El 20% inicial sera el MST mutado (buen punto de partida)
+        if (i < m_populationSize * 0.2f && !m_seedLines.empty()) {
+            population[i].lines = m_seedLines;
+            for (int k = 0; k < 3; ++k) Mutate(population[i]);
+        } else {
+            population[i] = CreateRandomChromosome();
+        }
+    }
 
     unsigned int numCores = std::thread::hardware_concurrency();
     if (numCores == 0) numCores = 4;
@@ -302,7 +403,6 @@ std::vector<CLine> GeneticAlgorithm::Optimize() {
         std::vector<Chromosome> newPop;
         for (int i = 0; i < 10 && i < m_populationSize; ++i) newPop.push_back(population[i]);
 
-        // seleccion por torneo (mejor diversidad)
         auto tournamentSelect = [&]() {
             int bestIdx = rand() % m_populationSize;
             for (int k = 1; k < 3; ++k) {
@@ -352,7 +452,6 @@ std::vector<CLine> GeneticAlgorithm::Optimize() {
             }
         }
         
-        // actualizamos el mejor absoluto
         if (currentFit < bestFit) {
             best = current;
             bestFit = currentFit;
@@ -360,6 +459,23 @@ std::vector<CLine> GeneticAlgorithm::Optimize() {
         temperature *= coolingRate;
     }
 
-    std::cout << "IA termino. Mejor fitness final: " << bestFit << "\n";
+    // --- BENCHMARK ---
+    std::cout << "\n=========================================\n";
+    std::cout << "BENCHMARK FINAL:\n";
+    std::cout << "  Costo MST (cota inferior teorica): " << m_mstCost << "\n";
+    std::cout << "  Fitness de la IA:                  " << bestFit << "\n";
+    if (m_mstCost > 0.0f) {
+        float gap = bestFit / m_mstCost;
+        std::cout << "  Brecha (IA / MST):                 " << gap << "x\n";
+        if (gap < 1.5f) {
+            std::cout << "  VEREDICTO: EXCELENTE (dentro del 50% del optimo)\n";
+        } else if (gap < 2.5f) {
+            std::cout << "  VEREDICTO: BUENO (dentro del 150% del optimo)\n";
+        } else {
+            std::cout << "  VEREDICTO: MEJORABLE (lejos del optimo, revisar algoritmo)\n";
+        }
+    }
+    std::cout << "=========================================\n\n";
+
     return best.lines;
 }
