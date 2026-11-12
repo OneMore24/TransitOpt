@@ -6,6 +6,7 @@
 #include <future>
 #include <iostream>
 #include <thread>
+#include <atomic>
 #include "Graph.h"
 #include "Grid.h"
 #include "Station.h"
@@ -25,6 +26,10 @@ private:
     int m_populationSize;
     int m_generations;
 
+    // variables atomicas pa el feedback visual
+    std::atomic<int> m_currentGen;
+    std::atomic<float> m_bestFitness;
+
     Chromosome CreateRandomChromosome();
     float EvaluateChromosome(Chromosome& c);
     void Mutate(Chromosome& c);
@@ -37,6 +42,10 @@ public:
                      int popSize, int gens);
                      
     std::vector<CLine> Optimize();
+
+    //getters pa q la ventana los lea
+    int GetCurrentGeneration() const { return m_currentGen.load(); }
+    float GetBestFitness() const { return m_bestFitness.load(); }
 };
 
 #endif

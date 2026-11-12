@@ -13,7 +13,7 @@ GeneticAlgorithm::GeneticAlgorithm(const std::vector<CStation<StationTrait<int>>
                                    int maxBridges, int maxLines,
                                    int popSize, int gens)
     : m_stations(stations), m_grid(&grid), m_maxBridges(maxBridges), m_maxLines(maxLines),
-      m_populationSize(popSize), m_generations(gens) {}
+      m_populationSize(popSize), m_generations(gens), m_currentGen(0), m_bestFitness(999999999.0f) {}
 
 Chromosome GeneticAlgorithm::CreateRandomChromosome() {
     Chromosome c;
@@ -266,6 +266,10 @@ std::vector<CLine> GeneticAlgorithm::Optimize() {
         }
 
         std::sort(population.begin(), population.end(), [](const Chromosome& a, const Chromosome& b) { return a.fitness < b.fitness; });
+
+        // actualisamos las variables atomicas pa la UI
+        m_currentGen = gen;
+        m_bestFitness = population[0].fitness;
 
         if (population[0].fitness < bestFitnessEver - 0.01f) {
             bestFitnessEver = population[0].fitness;

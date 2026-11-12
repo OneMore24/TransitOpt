@@ -6,26 +6,38 @@
 #include <cmath>
 #include <fstream>
 #include <random>
+#include <limits> // <--- Pa el cin.ignore
 #include "json.hpp"
 
 using json = nlohmann::json;
 
 Game::Game() 
-    : m_window(sf::VideoMode(sf::Vector2u(m_config.columns * m_config.cellSize + m_config.menuWidth, m_config.rows * m_config.cellSize)), "TransitOpt - Network Designer"),
-      m_mapa(m_config.rows, m_config.columns, m_config.cellSize),
+    : m_mapa(m_config.rows, m_config.columns, m_config.cellSize),
       m_redMetro(10),
       m_nextStationId(1), m_selectedStationId(-1),
       m_draggingType(-1), m_modoRio(false), m_pausado(false),
       m_isOptimizing(false), m_currentTrackIndex(0), m_musicPlaying(false) {
     
+    LoadConfig();      
+    SetupConfig();     
+
+    // Limpiamos la cola de la terminal pa q no se disparen teclas
+    std::cin.clear();
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+    // Creamos la ventana DESPUES de configurar
+    m_window.create(sf::VideoMode(sf::Vector2u(m_config.columns * m_config.cellSize + m_config.menuWidth, m_config.rows * m_config.cellSize)), "TransitOpt - Network Designer");
     m_window.setFramerateLimit(60);
+
+    // Resetiamos la vista pa q se vea todo bien
+    m_window.setView(sf::View(sf::FloatRect(sf::Vector2f(0, 0), sf::Vector2f(m_window.getSize().x, m_window.getSize().y))));
 
     if (!m_font.openFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")) {
         std::cout << "no se pudo cargar la fuente, el HUD no se vera\n";
     }
 
-    LoadConfig();      
-    SetupConfig();     
+    // Limpiamos eventos residuales
+    while (m_window.pollEvent()) {}
 
     m_tipos[0] = StationType::CIRCULO; m_tipos[1] = StationType::CUADRADO;
     m_tipos[2] = StationType::TRIANGULO; m_tipos[3] = StationType::OVALO;
@@ -101,28 +113,36 @@ void Game::Run() {
 
         m_window.clear(sf::Color(240, 240, 240));
         
-        Renderer::DrawMap(m_window, m_mapa, m_config.menuWidth);
-        Renderer::DrawLines(m_window, m_lineas, m_redMetro, m_mapa, m_config.menuWidth);
-        Renderer::DrawStations(m_window, m_redMetro, m_selectedStationId, m_config.menuWidth, m_config.cellSize);
-        Renderer::DrawMenu(m_window, m_tipos, m_config.menuWidth, m_modoRio, sf::Color::White);
-        
-        if (m_draggingType != -1) {
-            sf::Vector2f mousePos = m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window));
-            Renderer::DrawStationShape(m_window, static_cast<StationType>(m_draggingType), mousePos, m_config.cellSize / 3.0f, sf::Color(255, 255, 255, 200));
-        }
+        if (!m_isOptimizing) {
+            Renderer::DrawMap(m_window, m_mapa, m_config.menuWidth);
+            Renderer::DrawLines(m_window, m_lineas, m_redMetro, m_mapa, m_config.menuWidth);
+            Renderer::DrawStations(m_window, m_redMetro, m_selectedStationId, m_config.menuWidth, m_config.cellSize);
+            Renderer::DrawMenu(m_window, m_tipos, m_config.menuWidth, m_modoRio, sf::Color::White);
+            
+            if (m_draggingType != -1) {
+                sf::Vector2f mousePos = m_window.mapPixelToCoords(sf::Mouse::getPosition(m_window));
+                Renderer::DrawStationShape(m_window, static_cast<StationType>(m_draggingType), mousePos, m_config.cellSize / 3.0f, sf::Color(255, 255, 255, 200));
+            }
 
-        Renderer::DrawHUD(m_window, m_font, m_lineas.size(), m_isOptimizing);
-        
-        if (m_isOptimizing) {
+            Renderer::DrawHUD(m_window, m_font, m_lineas.size(), false);
+        } else {
             sf::RectangleShape overlay(sf::Vector2f(static_cast<float>(m_window.getSize().x), static_cast<float>(m_window.getSize().y)));
-            overlay.setFillColor(sf::Color(0, 0, 0, 180));
+            overlay.setFillColor(sf::Color(0, 0, 0, 220));
             m_window.draw(overlay);
             
             sf::Text txt(m_font);
-            txt.setString("LA IA ESTA DISENANDO LA RED...\nPOR FAVOR ESPERA");
             txt.setCharacterSize(24);
             txt.setFillColor(sf::Color::White);
-            txt.setPosition(sf::Vector2f(200, m_window.getSize().y / 2.0f - 50));
+            
+            std::string info = "LA IA ESTA DISENANDO LA RED...\n\n";
+            if (m_ga) {
+                info += "Generacion: " + std::to_string(m_ga->GetCurrentGeneration()) + " / " + std::to_string(m_config.gaGenerations) + "\n";
+                info += "Mejor Fitness: " + std::to_string(static_cast<int>(m_ga->GetBestFitness())) + "\n\n";
+            }
+            info += "Por favor espera...";
+            
+            txt.setString(info);
+            txt.setPosition(sf::Vector2f(150, m_window.getSize().y / 2.0f - 80));
             m_window.draw(txt);
         }
         
@@ -142,9 +162,9 @@ void Game::ProcessEvents() {
             if (key->code == sf::Keyboard::Key::C) ClearMap();
             if (key->code == sf::Keyboard::Key::S) SaveMap();
             if (key->code == sf::Keyboard::Key::L) LoadMap();
+            if (key->code == sf::Keyboard::Key::X) ExportMapToPNG();
         }
 
-        // AQUI ESTA EL ARREGLO: volvemos a detectar cuando arrastramos el mouse pa pintar el rio
         if (event->getIf<sf::Event::MouseMoved>()) {
             if (m_modoRio && sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
                 if (mousePos.x >= m_config.menuWidth) {
@@ -205,7 +225,6 @@ void Game::RunAI() {
         std::random_device rd;
         std::mt19937 g(rd());
         std::shuffle(m_config.playlist.begin(), m_config.playlist.end(), g);
-
         m_currentTrackIndex = 0;
         if (m_music.openFromFile(m_config.playlist[0])) {
             m_music.play();
@@ -213,12 +232,13 @@ void Game::RunAI() {
         }
     }
 
-    m_optimizeFuture = std::async(std::launch::async, [this]() {
-        std::vector<CStation<StationTrait<int>>*> stations;
-        for (size_t i = 0; i < m_redMetro.GetNumStations(); ++i) stations.push_back(m_redMetro.GetStation(i));
+    std::vector<CStation<StationTrait<int>>*> stations;
+    for (size_t i = 0; i < m_redMetro.GetNumStations(); ++i) stations.push_back(m_redMetro.GetStation(i));
 
-        GeneticAlgorithm ga(stations, m_mapa, m_config.maxBridges, m_config.maxLines, m_config.gaPopulation, m_config.gaGenerations);
-        return ga.Optimize();
+    m_ga = std::make_unique<GeneticAlgorithm>(stations, m_mapa, m_config.maxBridges, m_config.maxLines, m_config.gaPopulation, m_config.gaGenerations);
+
+    m_optimizeFuture = std::async(std::launch::async, [this]() {
+        return m_ga->Optimize();
     });
 }
 
@@ -257,6 +277,18 @@ void Game::FinishAIOptimization() {
 
     m_window.setTitle("TransitOpt - Red Optimizada | Rutas: " + std::to_string(m_lineas.size()));
     std::cout << "IA aplicada al mapa!\n";
+}
+
+void Game::ExportMapToPNG() {
+    sf::Texture texture(sf::Vector2u(m_window.getSize().x, m_window.getSize().y));
+    texture.update(m_window);
+    
+    sf::Image image = texture.copyToImage();
+    if (image.saveToFile("red_exportada.png")) {
+        std::cout << "Mapa exportado como red_exportada.png\n";
+    } else {
+        std::cout << "Error al exportar la imagen\n";
+    }
 }
 
 void Game::SaveMap() {

@@ -8,6 +8,8 @@
 #include "Graph.h"
 #include "Line.h"
 #include "Config.h"
+#include "GeneticAlgorithm.h"
+#include <memory>
 #include <vector>
 
 class Game {
@@ -31,6 +33,7 @@ private:
 
     bool m_isOptimizing;
     std::future<std::vector<CLine>> m_optimizeFuture;
+    std::unique_ptr<GeneticAlgorithm> m_ga;
 
     sf::Music m_music;
     int m_currentTrackIndex;
@@ -45,6 +48,7 @@ private:
     void SaveMap();
     void LoadMap();
     void PlayNextTrack();
+    void ExportMapToPNG();
 
 public:
     Game();
