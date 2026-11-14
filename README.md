@@ -1,8 +1,4 @@
-¡Claro que sí! Aquí tienes el contenido del `README.md` de forma aislada y limpia para que lo copies y lo pegues directamente en tu archivo, sin mezclarlo con el código de C++.
 
-***
-
-```markdown
 # TransitOpt 🚇🧠
 
 Motor de optimización de redes de transporte (Network Designer) utilizando **Algoritmos Genéticos** y **Programación Concurrente**, desarrollado en C++17.
